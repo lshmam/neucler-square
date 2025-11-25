@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase";
-import { postmarkClient } from "@/lib/postmark"; // Import the new helper
+import { postmarkClient } from "@/lib/postmark";
 
 export async function POST(request: Request) {
-    // 1. Auth Check
     const cookieStore = await cookies();
     const merchantId = cookieStore.get("session_merchant_id")?.value;
     if (!merchantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,59 +11,70 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const { subject, content, audience, title } = body;
+        const fromEmail = process.env.NEXT_PUBLIC_POSTMARK_FROM_EMAIL;
 
-        // 2. Fetch Target Audience from Supabase
-        let query = supabaseAdmin.from("customers").select("email, first_name").eq("merchant_id", merchantId);
-
-        if (audience === "vip") {
-            query = query.gt("total_spend_cents", 50000);
-        } else if (audience === "new") {
-            query = query.eq("visit_count", 1);
+        if (!fromEmail) {
+            console.error("❌ Missing NEXT_PUBLIC_POSTMARK_FROM_EMAIL in .env");
+            return NextResponse.json({ error: "Server misconfiguration: Missing sender email." }, { status: 500 });
         }
 
-        const { data: customers, error } = await query;
+        // 1. Fetch Audience
+        let query = supabaseAdmin.from("customers").select("email, first_name").eq("merchant_id", merchantId).neq("email", null);
 
-        if (error || !customers || customers.length === 0) {
+        if (audience === "vip") query = query.gt("total_spend_cents", 50000);
+        // Add logic for 'new' or 'loyal' here if needed
+
+        const { data: customers } = await query;
+
+        if (!customers || customers.length === 0) {
             return NextResponse.json({ error: "No customers found for this audience." }, { status: 400 });
         }
 
-        // 3. Save Campaign to DB (Mark as 'sent')
-        const { error: dbError } = await supabaseAdmin
-            .from("email_campaigns")
-            .insert({
-                merchant_id: merchantId,
-                name: title,
-                subject: subject,
-                body: content,
-                audience: audience,
-                status: "sent",
-                sent_count: customers.length
-            });
+        // 2. Prepare Messages
+        const messages = customers.map(c => ({
+            From: fromEmail,
+            To: c.email,
+            Subject: subject,
+            HtmlBody: `
+          <div style="font-family: sans-serif; color: #333;">
+            <p>Hi ${c.first_name || "there"},</p>
+            <div style="margin: 20px 0;">
+              ${content}
+            </div>
+            <p style="font-size: 12px; color: #888; margin-top: 40px;">
+              ${title} • <a href="#">Unsubscribe</a>
+            </p>
+          </div>
+        `,
+            MessageStream: "broadcast"
+        }));
 
-        if (dbError) throw dbError;
-
-        // 4. Send Emails via Postmark (Batching)
-        // Postmark allows up to 500 emails in a single batch API call.
-        const messages = customers
-            .filter(c => c.email) // Ensure email exists
-            .map(c => ({
-                From: "ai@neucler.com", // MUST match your verified Sender Signature in Postmark
-                To: c.email,
-                Subject: subject,
-                HtmlBody: `<p>Hi ${c.first_name},</p><br/>${content}`,
-                TextBody: content.replace(/<[^>]*>?/gm, ''), // Strip HTML for text version
-                MessageStream: "broadcast" // Optional: Use 'broadcast' for bulk marketing, 'outbound' for transactional
-            }));
-
-        // Send in a single batch call (super fast)
+        // 3. Send via Postmark
         if (messages.length > 0) {
-            await postmarkClient.sendEmailBatch(messages);
+            // Send in batches of 500 if list is huge (Postmark limit), strictly simpler here:
+            try {
+                await postmarkClient.sendEmailBatch(messages);
+                console.log(`✅ Sent ${messages.length} emails via Postmark.`);
+            } catch (postmarkError: any) {
+                console.error("❌ Postmark API Error:", postmarkError.message);
+                return NextResponse.json({ error: `Email Provider Error: ${postmarkError.message}` }, { status: 502 });
+            }
         }
 
-        return NextResponse.json({ success: true, count: customers.length });
+        // 4. Log Campaign to DB
+        await supabaseAdmin.from("email_campaigns").insert({
+            merchant_id: merchantId,
+            name: title,
+            subject: subject,
+            body: content,
+            audience: audience,
+            status: "sent",
+            sent_count: customers.length
+        });
 
-    } catch (error) {
-        console.error("Campaign Error:", error);
-        return NextResponse.json({ error: "Failed to send campaign" }, { status: 500 });
+        return NextResponse.json({ success: true, count: customers.length });
+    } catch (error: any) {
+        console.error("❌ Campaign Route Error:", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

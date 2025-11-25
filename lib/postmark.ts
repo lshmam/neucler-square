@@ -1,9 +1,9 @@
-import { ServerClient } from 'postmark';
+import * as postmark from "postmark";
 
 const serverToken = process.env.POSTMARK_SERVER_TOKEN;
 
 if (!serverToken) {
-    throw new Error("Missing POSTMARK_SERVER_TOKEN env variable");
+    console.warn("⚠️ POSTMARK_SERVER_TOKEN is missing. Emails will not send.");
 }
 
-export const postmarkClient = new ServerClient(serverToken);
+export const postmarkClient = new postmark.ServerClient(serverToken || "fake-token");

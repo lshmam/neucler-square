@@ -152,3 +152,65 @@ export async function getDailyStats(merchantId: string, accessToken: string) {
         return { total: "0.00", count: 0 };
     }
 }
+
+// 1. GET FULL LOCATION DETAILS (Hours, Address, Phone)
+export async function getPrimaryLocation(accessToken: string) {
+    try {
+        const res = await fetch(`${BASE_URL}/locations`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            next: { revalidate: 3600 },
+        });
+
+        const data = await res.json();
+        // Get the first active location
+        const location = data.locations?.find((l: any) => l.status === "ACTIVE");
+
+        if (!location) return null;
+
+        return {
+            id: location.id,
+            name: location.name,
+            address: location.address ?
+                `${location.address.address_line_1}, ${location.address.locality}` : "",
+            phone: location.phone_number || "",
+            website: location.website_url || "",
+            timezone: location.timezone || "UTC",
+            // Square hours format: { periods: [ { start_local_time: "09:00", end_local_time: "17:00", day_of_week: "MON" } ] }
+            raw_hours: location.business_hours?.periods || []
+        };
+    } catch (error) {
+        console.error("Square Location Fetch Error:", error);
+        return null;
+    }
+}
+
+// 2. GET SERVICE MENU (Catalog)
+export async function getCatalogSummary(accessToken: string) {
+    try {
+        const res = await fetch(`${BASE_URL}/catalog/list?types=ITEM,CATEGORY`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            next: { revalidate: 3600 },
+        });
+
+        const data = await res.json();
+        const items = data.objects || [];
+
+        // Filter for top 20 items to keep the prompt concise
+        const services = items
+            .filter((i: any) => i.type === "ITEM" && !i.is_deleted)
+            .slice(0, 20)
+            .map((i: any) => {
+                const name = i.item_data.name;
+                // Square pricing is complex (variations), grabbing the first variation price
+                const priceMoney = i.item_data.variations?.[0]?.item_variation_data?.price_money;
+                const price = priceMoney ? `$${(Number(priceMoney.amount) / 100).toFixed(2)}` : "Varies";
+                return `- ${name}: ${price}`;
+            })
+            .join("\n");
+
+        return services || ""; // Returns a string like "- Haircut: $50.00\n- Color: $120.00"
+    } catch (error) {
+        console.error("Square Catalog Fetch Error:", error);
+        return "";
+    }
+}

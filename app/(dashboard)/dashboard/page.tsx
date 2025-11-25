@@ -27,6 +27,17 @@ export default async function DashboardPage() {
     const merchantId = cookieStore.get("session_merchant_id")?.value;
     if (!merchantId) redirect("/");
 
+    const { data: profile } = await supabaseAdmin
+        .from("business_profiles")
+        .select("is_onboarding_completed")
+        .eq("merchant_id", merchantId)
+        .single();
+
+    // If no profile OR onboarding is false -> Force Redirect
+    if (!profile || !profile.is_onboarding_completed) {
+        redirect("/onboarding");
+    }
+
     // 1. Fetch Merchant Credentials
     const { data: merchant } = await supabaseAdmin
         .from("merchants")
