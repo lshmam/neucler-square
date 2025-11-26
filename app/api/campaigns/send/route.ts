@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase";
-import { postmarkClient } from "@/lib/postmark";
+import { mg, DOMAIN } from "@/lib/mailgun";
 
 export async function POST(request: Request) {
     const cookieStore = await cookies();
@@ -11,18 +11,27 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const { subject, content, audience, title } = body;
-        const fromEmail = process.env.NEXT_PUBLIC_POSTMARK_FROM_EMAIL;
+        const fromEmail = process.env.NEXT_PUBLIC_FROM_EMAIL;
+        const mailgunDomain = DOMAIN;
 
-        if (!fromEmail) {
-            console.error("❌ Missing NEXT_PUBLIC_POSTMARK_FROM_EMAIL in .env");
-            return NextResponse.json({ error: "Server misconfiguration: Missing sender email." }, { status: 500 });
+        if (!fromEmail || !mailgunDomain) {
+            return NextResponse.json({ error: "Server misconfiguration: Missing Mailgun config." }, { status: 500 });
         }
 
-        // 1. Fetch Audience
+        // 1. Fetch Merchant Info (For Reply-To)
+        const { data: merchant } = await supabaseAdmin
+            .from("merchants")
+            .select("business_name, email")
+            .eq("platform_merchant_id", merchantId)
+            .single();
+
+        if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
+
+        // 2. Fetch Audience
         let query = supabaseAdmin.from("customers").select("email, first_name").eq("merchant_id", merchantId).neq("email", null);
 
+        // Add filtering logic
         if (audience === "vip") query = query.gt("total_spend_cents", 50000);
-        // Add logic for 'new' or 'loyal' here if needed
 
         const { data: customers } = await query;
 
@@ -30,38 +39,49 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "No customers found for this audience." }, { status: 400 });
         }
 
-        // 2. Prepare Messages
-        const messages = customers.map(c => ({
-            From: fromEmail,
-            To: c.email,
-            Subject: subject,
-            HtmlBody: `
-          <div style="font-family: sans-serif; color: #333;">
-            <p>Hi ${c.first_name || "there"},</p>
-            <div style="margin: 20px 0;">
-              ${content}
-            </div>
-            <p style="font-size: 12px; color: #888; margin-top: 40px;">
-              ${title} • <a href="#">Unsubscribe</a>
+        // 3. Prepare Batch Sending for Mailgun
+        // Mailgun allows sending to multiple recipients in one API call using "Recipient Variables"
+        // This is much faster/cheaper than a loop.
+
+        const recipients: string[] = [];
+        const recipientVariables: Record<string, any> = {};
+
+        customers.forEach(c => {
+            if (c.email) {
+                recipients.push(c.email);
+                // Map email to { id: 1, name: "John" } so we can use %recipient.name% in the body
+                recipientVariables[c.email] = { name: c.first_name || "there" };
+            }
+        });
+
+        if (recipients.length === 0) return NextResponse.json({ error: "No valid emails found" }, { status: 400 });
+
+        // 4. Send via Mailgun
+        const messageData = {
+            from: `${merchant.business_name} via VoiceIntel <${fromEmail}>`,
+            to: recipients, // Array of emails
+            'recipient-variables': JSON.stringify(recipientVariables), // Magic mapping
+            'h:Reply-To': merchant.email, // <--- CRITICAL: Replies go to the merchant!
+            subject: subject,
+            // We use %recipient.name% which Mailgun replaces per person
+            html: `
+          <div style="font-family: Helvetica, Arial, sans-serif; color: #333; line-height: 1.5;">
+            <p>Hi %recipient.name%,</p> 
+            <div style="margin: 20px 0; white-space: pre-wrap;">${content}</div>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;" />
+            <p style="font-size: 12px; color: #888;">
+              ${merchant.business_name} • Powered by VoiceIntel
+              <br/>
+              <a href="%unsubscribe_url%" style="color: #888;">Unsubscribe</a>
             </p>
           </div>
-        `,
-            MessageStream: "broadcast"
-        }));
+        `
+        };
 
-        // 3. Send via Postmark
-        if (messages.length > 0) {
-            // Send in batches of 500 if list is huge (Postmark limit), strictly simpler here:
-            try {
-                await postmarkClient.sendEmailBatch(messages);
-                console.log(`✅ Sent ${messages.length} emails via Postmark.`);
-            } catch (postmarkError: any) {
-                console.error("❌ Postmark API Error:", postmarkError.message);
-                return NextResponse.json({ error: `Email Provider Error: ${postmarkError.message}` }, { status: 502 });
-            }
-        }
+        const msg = await mg.messages.create(mailgunDomain, messageData);
+        console.log(`✅ Mailgun Sent: ${msg.id}`);
 
-        // 4. Log Campaign to DB
+        // 5. Log Campaign to Database
         await supabaseAdmin.from("email_campaigns").insert({
             merchant_id: merchantId,
             name: title,
@@ -69,12 +89,13 @@ export async function POST(request: Request) {
             body: content,
             audience: audience,
             status: "sent",
-            sent_count: customers.length
+            sent_count: recipients.length
         });
 
-        return NextResponse.json({ success: true, count: customers.length });
+        return NextResponse.json({ success: true, count: recipients.length });
+
     } catch (error: any) {
-        console.error("❌ Campaign Route Error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        console.error("❌ Mailgun Error:", error);
+        return NextResponse.json({ error: error.message || "Failed to send emails" }, { status: 500 });
     }
 }

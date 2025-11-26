@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
             secure: process.env.NODE_ENV === "production",
             httpOnly: true,
             sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 7, // 7 days
+            maxAge: 60 * 60 * 24 * 30, // FIXED: 30 Days
         });
 
         return NextResponse.redirect(new URL("/dashboard?status=connected", request.url));

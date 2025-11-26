@@ -1,37 +1,53 @@
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { getAuthUrl } from "@/lib/square";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { Sparkles } from "lucide-react";
 
-export default function HomePage() {
-  // Define Scopes: What data do we want?
-  const scopes = [
-    "MERCHANT_PROFILE_READ",
-    "CUSTOMERS_READ",
-    "CUSTOMERS_WRITE",
-    "ORDERS_READ"
-  ].join(" ");
+export default async function LoginPage() {
+  // 1. Auto-Redirect if already logged in
+  const cookieStore = await cookies();
+  const session = cookieStore.get("session_merchant_id");
 
-  const isSandbox = process.env.SQUARE_ENVIRONMENT === "sandbox";
-  const baseUrl = isSandbox
-    ? "https://connect.squareupsandbox.com"
-    : "https://connect.squareup.com";
+  if (session?.value) {
+    redirect("/dashboard");
+  }
 
-  // --- NEW: Define the Redirect URI dynamically ---
-  // This ensures it works on localhost OR your production domain automatically
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/square/callback`;
-
-  // --- ADDED: &redirect_uri=${redirectUri} ---
-  const authUrl = `${baseUrl}/oauth2/authorize?client_id=${process.env.SQUARE_APP_ID}&scope=${scopes}&session=false&redirect_uri=${redirectUri}`;
+  // 2. Get the consistent Auth URL
+  const authUrl = getAuthUrl();
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen space-y-6">
-      <h1 className="text-4xl font-bold">neucler dashboard</h1>
-      <p className="text-muted-foreground">Connect your Square POS to get started.</p>
+    <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-4">
+      <div className="mb-8 flex items-center gap-2">
+        <Sparkles className="h-8 w-8 text-[#906CDD]" />
+        <h1 className="text-3xl font-bold text-white tracking-tight">neucler</h1>
+      </div>
 
-      <Link href={authUrl}>
-        <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-          Connect Square Account
-        </Button>
-      </Link>
-    </main>
+      <Card className="w-full max-w-md bg-white/5 border-white/10 text-white backdrop-blur-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Welcome Back</CardTitle>
+          <CardDescription className="text-gray-400">
+            Connect your Square POS to access AI insights & tools.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            asChild
+            className="w-full h-12 text-lg font-medium bg-white text-black hover:bg-gray-200 transition-all"
+          >
+            <a href={authUrl}>
+              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zM10 16H8v-4h2v4zm6 0h-2v-4h2v4zm-3-6H8V8h5v2z" />
+              </svg>
+              Log in with Square
+            </a>
+          </Button>
+          <p className="mt-4 text-xs text-center text-gray-500">
+            By connecting, you agree to our Terms of Service.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

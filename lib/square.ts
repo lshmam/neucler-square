@@ -5,11 +5,46 @@ const BASE_URL = IS_SANDBOX
     ? "https://connect.squareupsandbox.com/v2"
     : "https://connect.squareup.com/v2";
 
+
+const OAUTH_BASE_URL = IS_SANDBOX
+    ? "https://connect.squareupsandbox.com/oauth2/authorize"
+    : "https://connect.squareup.com/oauth2/authorize";
+
+
+
+// CRITICAL: Keep this list static. Changing it triggers the Permission Screen again.
+export const SQUARE_SCOPES = [
+    "MERCHANT_PROFILE_READ",
+    "CUSTOMERS_READ",
+    "CUSTOMERS_WRITE",
+    "ORDERS_READ",
+    "ITEMS_READ",
+    "LOYALTY_READ",
+    "LOYALTY_WRITE"
+];
+
+// 2. HELPER: Generate the Login URL
+export function getAuthUrl() {
+    const clientId = process.env.SQUARE_APP_ID;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL; // e.g. https://voiceintel.com
+    const redirectUri = `${baseUrl}/square/callback`;
+
+    // Use URLSearchParams to handle encoding automatically (spaces -> %20)
+    const params = new URLSearchParams({
+        client_id: clientId!,
+        scope: SQUARE_SCOPES.join(" "),
+        redirect_uri: redirectUri,
+        // 'state' is optional but good for security. You can add a random string here if needed.
+    });
+
+    return `${OAUTH_BASE_URL}?${params.toString()}`;
+}
+
 // --- 1. Get Merchant Profile ---
 export async function getMerchantInfo(accessToken: string) {
     try {
-        const res = await fetch(`${BASE_URL}/merchants/me`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
+        const res = await fetch(`${BASE_URL} /merchants/me`, {
+            headers: { Authorization: `Bearer ${accessToken} ` },
             next: { revalidate: 3600 }, // Cache for 1 hour
         });
 

@@ -1,60 +1,108 @@
-const RETELL_BASE_URL = "https://api.retellai.com";
+const RETELL_API_KEY = process.env.RETELL_API_KEY;
+const BASE_URL = "https://api.retellai.com";
 
-// --- MOCK DATA (Fallback) ---
-const MOCK_CALLS = [
-    {
-        call_id: "mock_1",
-        agent_id: "agent_123",
-        customer_phone: "+15550101",
-        call_status: "ended",
-        start_timestamp: Date.now() - 100000,
-        duration_ms: 120000,
-        transcript: "Hello, I'd like to book an appointment for next Tuesday.",
-        recording_url: "#",
-        sentiment: "positive"
-    },
-    {
-        call_id: "mock_2",
-        agent_id: "agent_123",
-        customer_phone: "+15550199",
-        call_status: "ended",
-        start_timestamp: Date.now() - 500000,
-        duration_ms: 45000,
-        transcript: "Please remove me from your list.",
-        recording_url: "#",
-        sentiment: "negative"
-    },
-    {
-        call_id: "mock_3",
-        agent_id: "agent_123",
-        customer_phone: "+15550200",
-        call_status: "ongoing",
-        start_timestamp: Date.now() - 1000,
-        duration_ms: 1000,
-        transcript: "Hi there, are you open today?",
-        recording_url: "#",
-        sentiment: "neutral"
+if (!RETELL_API_KEY) {
+    console.error("❌ RETELL_API_KEY is missing from .env");
+}
+
+const headers = {
+    "Authorization": `Bearer ${RETELL_API_KEY}`,
+    "Content-Type": "application/json",
+};
+
+// --- 1. PROVISIONING & CONFIG (New Stuff) ---
+
+// Create/Update the "Brain" (System Prompt)
+export async function upsertRetellLLM(existingLlmId: string | null, systemPrompt: string) {
+    const payload = {
+        model: "gpt-4o", // Production standard
+        general_prompt: systemPrompt,
+    };
+
+    if (existingLlmId) {
+        const res = await fetch(`${BASE_URL}/update-retell-llm/${existingLlmId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Failed to update LLM: ${await res.text()}`);
+        return await res.json();
+    } else {
+        const res = await fetch(`${BASE_URL}/create-retell-llm`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Failed to create LLM: ${await res.text()}`);
+        return await res.json();
     }
-];
+}
+
+// Create/Update the Agent (Voice + Link to Brain)
+export async function upsertRetellAgent(
+    existingAgentId: string | null,
+    llmId: string,
+    voiceId: string,
+    agentName: string,
+    openingGreeting: string
+) {
+    const payload = {
+        agent_name: agentName,
+        voice_id: voiceId,
+        retell_llm_id: llmId, // Connects the Brain
+        response_engine: { llm_id: llmId, type: "retell-llm" },
+        fallback_voice_ids: ["openai-alloy"],
+        // Some versions of Retell allow setting greeting here or in LLM
+        // We update name/voice/LLM primarily
+    };
+
+    if (existingAgentId) {
+        const res = await fetch(`${BASE_URL}/update-agent/${existingAgentId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Failed to update Agent: ${await res.text()}`);
+        return await res.json();
+    } else {
+        const res = await fetch(`${BASE_URL}/create-agent`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Failed to create Agent: ${await res.text()}`);
+        return await res.json();
+    }
+}
+
+// Purchase real phone numbers
+export async function buyPhoneNumber(areaCode: number, agentId: string) {
+    const res = await fetch(`${BASE_URL}/create-phone-number`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+            area_code: areaCode,
+            agent_id: agentId
+        })
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error_message || "Failed to buy number");
+    }
+    return await res.json();
+}
 
 
-// --- FUNCTIONS ---
+// --- 2. DATA FETCHING (Your Existing Logic - Kept & Improved) ---
 
 export async function getRetellCallLogs(limit = 20) {
-    // 1. Check for API Key
-    if (!process.env.RETELL_API_KEY) {
-        console.warn("⚠️ Missing RETELL_API_KEY in .env.local. Using Mock Data.");
-        return MOCK_CALLS;
-    }
+    if (!RETELL_API_KEY) return []; // Return empty if no key
 
     try {
-        // 2. Use POST method (Retell V2 Requirement)
-        const res = await fetch(`${RETELL_BASE_URL}/v2/list-calls`, {
+        const res = await fetch(`${BASE_URL}/v2/list-calls`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
-                "Content-Type": "application/json"
-            },
+            headers,
             body: JSON.stringify({
                 limit: limit,
                 sort_order: "descending"
@@ -62,82 +110,62 @@ export async function getRetellCallLogs(limit = 20) {
             next: { revalidate: 60 }
         });
 
-        // 3. Handle API Errors Gracefully
-        if (!res.ok) {
-            const errorText = await res.text();
-            console.error(`❌ Retell API Error (${res.status}):`, errorText);
-            return MOCK_CALLS; // Return mock data so page doesn't crash
-        }
-
-        const data = await res.json();
-        return data;
-
-    } catch (error) {
-        console.error("❌ Network Error in getRetellCallLogs:", error);
-        return MOCK_CALLS;
-    }
-}
-
-// 1. FETCH REAL VOICES
-export async function getVoices() {
-    if (!process.env.RETELL_API_KEY) {
-        return [
-            { voice_id: "11labs-Adrian", voice_name: "Adrian (Mock)", provider: "11labs" },
-            { voice_id: "openai-Alloy", voice_name: "Alloy (Mock)", provider: "openai" }
-        ];
-    }
-
-    try {
-        const res = await fetch(`${RETELL_BASE_URL}/list-voices`, {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${process.env.RETELL_API_KEY}` },
-            next: { revalidate: 86400 } // Cache for 24 hours
-        });
-
-        if (!res.ok) throw new Error("Failed to fetch voices");
+        if (!res.ok) return [];
         const data = await res.json();
         return data;
     } catch (error) {
-        console.error("Error fetching voices:", error);
+        console.error("Error fetching logs:", error);
         return [];
     }
 }
 
-// 2. FETCH USER'S PHONE NUMBERS (To find a "From" number)
-export async function getRetellPhoneNumbers() {
-    if (!process.env.RETELL_API_KEY) return [];
+export async function getVoices() {
+    if (!RETELL_API_KEY) return [];
 
     try {
-        const res = await fetch(`${RETELL_BASE_URL}/list-phone-numbers`, {
+        const res = await fetch(`${BASE_URL}/list-voices`, {
             method: "GET",
-            headers: { "Authorization": `Bearer ${process.env.RETELL_API_KEY}` },
+            headers,
+            next: { revalidate: 86400 }
+        });
+
+        if (!res.ok) throw new Error("Failed to fetch voices");
+        return await res.json();
+    } catch (error) {
+        return [];
+    }
+}
+
+export async function getRetellPhoneNumbers() {
+    if (!RETELL_API_KEY) return [];
+
+    try {
+        const res = await fetch(`${BASE_URL}/list-phone-numbers`, {
+            method: "GET",
+            headers,
             cache: "no-store"
         });
-        const data = await res.json();
-        return data; // Array of objects containing .phone_number
+        return await res.json();
     } catch (e) {
         return [];
     }
 }
 
-// 3. MAKE OUTBOUND CALL
+// Make an outbound call (Testing tool)
 export async function makeOutboundCall(to: string, agentId: string) {
-    if (!process.env.RETELL_API_KEY) throw new Error("No API Key");
+    if (!RETELL_API_KEY) throw new Error("No API Key");
 
-    // A. Find a number to call FROM
+    // 1. Find a number to call FROM
     const numbers = await getRetellPhoneNumbers();
     if (!numbers || numbers.length === 0) {
-        throw new Error("No Phone Numbers found in Retell account. Please buy one in the Retell Dashboard.");
+        throw new Error("No Phone Numbers found. Buy one in the AI Agent Studio.");
     }
-    const fromNumber = numbers[0].phone_number; // Use the first available number
+    const fromNumber = numbers[0].phone_number;
 
-    // B. Make the call
-    const res = await fetch(`${RETELL_BASE_URL}/v2/create-phone-call`, {
+    // 2. Make the call
+    const res = await fetch(`${BASE_URL}/v2/create-phone-call`, {
         method: "POST",
-        headers: {
-            "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
-            "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify({
             from_number: fromNumber,
             to_number: to,
@@ -151,41 +179,4 @@ export async function makeOutboundCall(to: string, agentId: string) {
     }
 
     return await res.json();
-}
-
-// 4. CREATE/UPDATE AGENT
-export async function createOrUpdateRetellAgent(agentData: any, existingAgentId?: string) {
-    // Note: In a real app, you create an LLM first, then the Agent.
-    // For this simplified demo, we assume you are updating an existing agent 
-    // OR we accept that creating a raw agent without an LLM might return an error in strict mode.
-
-    if (!process.env.RETELL_API_KEY) return { agent_id: "mock_agent_id" };
-
-    const method = existingAgentId ? "PATCH" : "POST";
-    const endpoint = existingAgentId
-        ? `${RETELL_BASE_URL}/update-agent/${existingAgentId}`
-        : `${RETELL_BASE_URL}/create-agent`;
-
-    const payload = {
-        agent_name: agentData.name,
-        voice_id: agentData.voice_id,
-        // Ideally, we pass the LLM ID here. For now, we just update voice/name.
-    };
-
-    const res = await fetch(endpoint, {
-        method: method,
-        headers: {
-            "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-        // If update fails (common if LLM setup is complex), return mock so DB saves anyway
-        console.error("Retell Agent Update Failed:", await res.text());
-        return { agent_id: existingAgentId || "agent_manual_setup_needed" };
-    }
-
-    return res.json();
 }

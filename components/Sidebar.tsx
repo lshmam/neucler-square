@@ -10,9 +10,9 @@ import {
     Bot,
     Mail,
     Globe,
-    BarChart3,
     Sparkles,
-    Smartphone // Added for SMS distinction if needed
+    Smartphone,
+    LogOut // Import the LogOut icon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +42,12 @@ const routes = [
         color: "text-orange-500",
     },
     {
+        label: "Automations",
+        icon: Sparkles, // Or CircuitBoard/Zap
+        href: "/automations",
+        color: "text-purple-500",
+    },
+    {
         label: "SMS Marketing",
         icon: Smartphone,
         href: "/sms",
@@ -56,7 +62,7 @@ const routes = [
     {
         label: "Site Widgets",
         icon: Globe,
-        href: "/site-widgets", // Ensure this matches your folder name (e.g., /web-integration)
+        href: "/site-widgets",
         color: "text-indigo-500",
     },
     {
@@ -66,13 +72,13 @@ const routes = [
         color: "text-pink-500",
     },
     {
-        label: "Analytics",
-        icon: BarChart3, // Import from lucide-react
+        label: "Analytics", // Added Analytics based on previous request
+        icon: LayoutDashboard, // You can use BarChart3 if imported
         href: "/analytics",
         color: "text-emerald-500",
     },
     {
-        label: "Settings", // <--- NEW LINK
+        label: "Settings",
         icon: Settings,
         href: "/settings",
         color: "text-gray-400",
@@ -84,6 +90,7 @@ export function Sidebar() {
 
     return (
         <aside className="space-y-4 py-4 flex flex-col h-full bg-[#0F172A] text-white border-r border-gray-800">
+            {/* TOP SECTION: Logo & Nav Links */}
             <div className="px-3 py-2 flex-1">
                 <Link href="/dashboard" className="flex items-center pl-3 mb-14">
                     <div className="relative h-8 w-8 mr-4">
@@ -108,6 +115,19 @@ export function Sidebar() {
                         </Link>
                     ))}
                 </div>
+            </div>
+
+            {/* BOTTOM SECTION: Logout */}
+            <div className="px-3 py-2">
+                <Link
+                    href="/auth/logout" // Hits the route handler we made
+                    className="text-sm group flex p-3 w-full justify-start font-medium cursor-pointer text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition"
+                >
+                    <div className="flex items-center flex-1">
+                        <LogOut className="h-5 w-5 mr-3 text-red-500" />
+                        Sign Out
+                    </div>
+                </Link>
             </div>
         </aside>
     );
