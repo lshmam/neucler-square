@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import { Toaster } from 'sonner';
 import './globals.css'; // Your global styles
 
 // This sets up the default font.
@@ -24,6 +25,7 @@ export default function RootLayout({
         {/* For example, on the home page, `children` will be `app/page.tsx`. */}
         {/* On the dashboard, `children` will be your `app/(dashboard)/layout.tsx`. */}
         {children}
+        <Toaster />
       </body>
     </html>
   );
