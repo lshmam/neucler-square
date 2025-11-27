@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
     MessageSquare,
+    Star,
     Users,
     Settings,
     Bot,
@@ -29,12 +30,12 @@ const routes = [
         href: "/customers",
         color: "text-pink-500",
     },
-    // {
-    //     label: "Communications",
-    //     icon: MessageSquare,
-    //     href: "/communications",
-    //     color: "text-[#906CDD]",
-    // },
+    {
+        label: "Communications",
+        icon: MessageSquare,
+        href: "/communications",
+        color: "text-[#906CDD]",
+    },
     {
         label: "AI Voice Agent",
         icon: Bot,
@@ -70,6 +71,13 @@ const routes = [
         icon: Users,
         href: "/loyalty",
         color: "text-pink-500",
+    },
+    // In your routes array:
+    {
+        label: "Reputation",
+        icon: Star, // Import Star from lucide-react
+        href: "/reviews",
+        color: "text-yellow-500",
     },
     {
         label: "Analytics", // Added Analytics based on previous request

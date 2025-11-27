@@ -4,21 +4,17 @@ import { twilioClient } from "@/lib/twilio";
 
 export async function POST(request: Request) {
     const data = await request.formData();
-    const dialStatus = data.get("DialCallStatus"); // 'completed', 'busy', 'no-answer', 'failed', 'canceled'
-    const callerNumber = data.get("From") as string; // The Customer
-    const twilioNumber = data.get("To") as string;   // Your Twilio/AI Number
+    const dialStatus = data.get("DialCallStatus");
+    const callerNumber = data.get("From") as string;
+    const twilioNumber = data.get("To") as string;
 
     const url = new URL(request.url);
     const merchantId = url.searchParams.get("merchantId");
 
     if (!merchantId) return new NextResponse("OK");
 
-    console.log(`📞 Call Status: ${dialStatus} | Merchant: ${merchantId}`);
-
-    // TRIGGER CONDITION: The business owner didn't pick up
     if (dialStatus === "no-answer" || dialStatus === "busy" || dialStatus === "failed" || dialStatus === "canceled") {
 
-        // 1. Check if Automation is ON
         const { data: automation } = await supabaseAdmin
             .from("automations")
             .select("is_active, config")
@@ -27,24 +23,32 @@ export async function POST(request: Request) {
             .single();
 
         if (automation?.is_active) {
-            // 2. Get Business Name for context
             const { data: merchant } = await supabaseAdmin.from("merchants").select("business_name").eq("platform_merchant_id", merchantId).single();
             const businessName = merchant?.business_name || "Us";
 
-            // 3. Send the Text
             try {
                 const message = automation.config?.message || "Sorry we missed your call! How can we help?";
-                // Prefix with business name so customer knows who it is
                 const fullMessage = `Hi, this is ${businessName}. ${message}`;
 
+                // 1. Send SMS
                 await twilioClient.messages.create({
                     body: fullMessage,
-                    from: twilioNumber, // Send from the number they just called
+                    from: twilioNumber,
                     to: callerNumber
                 });
-                console.log("✅ SMS Sent!");
+
+                // 2. NEW: Save to Messages Table (For Inbox Visibility)
+                await supabaseAdmin.from("messages").insert({
+                    merchant_id: merchantId,
+                    customer_phone: callerNumber,
+                    direction: "outbound",
+                    body: fullMessage,
+                    status: "sent"
+                });
+
+                console.log("✅ Sent and Logged Missed Call SMS");
             } catch (error) {
-                console.error("❌ SMS Failed:", error);
+                console.error("SMS Failed:", error);
             }
         }
     }

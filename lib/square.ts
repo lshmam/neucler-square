@@ -249,3 +249,38 @@ export async function getCatalogSummary(accessToken: string) {
         return "";
     }
 }
+
+export async function getCustomerFromOrder(orderId: string, accessToken: string) {
+    try {
+        // 1. Get Order to find Customer ID
+        const orderRes = await fetch(`${BASE_URL}/orders/${orderId}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            cache: "no-store",
+        });
+
+        if (!orderRes.ok) return null;
+        const orderData = await orderRes.json();
+        const customerId = orderData.order?.customer_id;
+
+        if (!customerId) return null; // Guest checkout (no phone number)
+
+        // 2. Get Customer Profile to find Phone Number
+        const customerRes = await fetch(`${BASE_URL}/customers/${customerId}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            cache: "no-store",
+        });
+
+        if (!customerRes.ok) return null;
+        const customerData = await customerRes.json();
+
+        return {
+            id: customerData.customer.id,
+            firstName: customerData.customer.given_name,
+            phoneNumber: customerData.customer.phone_number
+        };
+
+    } catch (error) {
+        console.error("Error fetching customer from order:", error);
+        return null;
+    }
+}

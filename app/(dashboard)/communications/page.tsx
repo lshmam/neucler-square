@@ -1,44 +1,49 @@
-import { getRetellCallLogs } from "@/lib/retell";
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { CommunicationsClient } from "./client-view";
+import { cookies } from "next/headers";
+import { supabaseAdmin } from "@/lib/supabase";
+import { ChatInterface } from "./chat-interface"; // We will create this next
 
 export default async function CommunicationsPage() {
     const cookieStore = await cookies();
     const merchantId = cookieStore.get("session_merchant_id")?.value;
     if (!merchantId) redirect("/");
 
-    // Fetch Data in Parallel
-    const callsPromise = getRetellCallLogs(20);
-
-    // 1. Fetch SMS/Automation Logs
-    const logsPromise = supabaseAdmin
-        .from("automation_logs")
+    // 1. Fetch All Messages
+    const { data: messages } = await supabaseAdmin
+        .from("messages")
         .select("*")
         .eq("merchant_id", merchantId)
-        .order("created_at", { ascending: false })
-        .limit(50);
+        .order("created_at", { ascending: true });
 
-    // 2. Fetch Email Campaigns (NEW)
-    const campaignsPromise = supabaseAdmin
-        .from("email_campaigns")
-        .select("*")
-        .eq("merchant_id", merchantId)
-        .order("created_at", { ascending: false })
-        .limit(20);
+    // 2. Fetch Customers (To map Phone -> Name)
+    const { data: customers } = await supabaseAdmin
+        .from("customers")
+        .select("phone_number, first_name, last_name")
+        .eq("merchant_id", merchantId);
 
-    const [calls, { data: messages }, { data: campaigns }] = await Promise.all([
-        callsPromise,
-        logsPromise,
-        campaignsPromise
-    ]);
+    // 3. Group Messages by Conversation (Phone Number)
+    const conversations: Record<string, any> = {};
+
+    messages?.forEach((msg) => {
+        const phone = msg.customer_phone;
+        if (!conversations[phone]) {
+            // Find name
+            const cust = customers?.find(c => c.phone_number === phone);
+            conversations[phone] = {
+                phone,
+                name: cust ? `${cust.first_name} ${cust.last_name}` : "Unknown Customer",
+                messages: []
+            };
+        }
+        conversations[phone].messages.push(msg);
+    });
 
     return (
-        <CommunicationsClient
-            calls={calls}
-            messages={messages || []}
-            campaigns={campaigns || []} // Pass the real campaigns here
-        />
+        <div className="flex-1 h-[calc(100vh-4rem)]">
+            <ChatInterface
+                merchantId={merchantId}
+                initialConversations={Object.values(conversations)}
+            />
+        </div>
     );
 }
