@@ -13,7 +13,8 @@ import {
     Globe,
     Sparkles,
     Smartphone,
-    LogOut // Import the LogOut icon
+    LogOut, // Import the LogOut icon
+    CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,12 @@ const routes = [
         label: "Communications",
         icon: MessageSquare,
         href: "/communications",
+        color: "text-[#906CDD]",
+    },
+    {
+        label: "Subscription",
+        icon: CreditCard,
+        href: "/subscription",
         color: "text-[#906CDD]",
     },
     {

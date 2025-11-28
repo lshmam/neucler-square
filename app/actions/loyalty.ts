@@ -42,43 +42,28 @@ export async function adjustCustomerPoints(
 
 // --- PROGRAM MANAGEMENT ---
 
-export async function archiveProgram(programId: string) {
-    const { error } = await supabaseAdmin
-        .from("loyalty_programs")
-        .update({ status: "archived" })
-        .eq("id", programId);
-
-    if (error) throw error;
-    revalidatePath("/loyalty");
-}
-
-// NEW: Create a brand new program (and archive others)
+// 1. ACTIVATE A PROGRAM (And archive others)
 export async function createLoyaltyProgram(merchantId: string, programData: any, rewardsData: any[]) {
-    // 1. Archive ANY currently active programs for this merchant
-    await supabaseAdmin
-        .from("loyalty_programs")
-        .update({ status: "archived" })
-        .eq("merchant_id", merchantId)
-        .eq("status", "active");
 
-    // 2. Insert NEW Program
-    const { data: newProgram, error: progError } = await supabaseAdmin
-        .from("loyalty_programs")
-        .insert({
-            merchant_id: merchantId,
-            terminology: programData.terminology,
-            accrual_type: programData.accrualType,
-            accrual_rule: { spend: programData.spendAmount, earn: programData.earnAmount },
-            status: "active"
-        })
-        .select()
-        .single();
+    // 1. Call the Database Function (RPC)
+    // This runs the Archive + Insert logic atomically
+    const { data: newProgramId, error: rpcError } = await supabaseAdmin
+        .rpc('create_active_loyalty_program', {
+            p_merchant_id: merchantId,
+            p_terminology: programData.terminology,
+            p_accrual_type: programData.accrualType,
+            p_accrual_rule: { spend: programData.spendAmount, earn: programData.earnAmount }
+        });
 
-    if (progError) throw progError;
+    if (rpcError) {
+        console.error("RPC Error:", rpcError);
+        throw rpcError;
+    }
 
-    // 3. Insert Rewards
+    // 2. Insert Rewards (Standard Insert)
+    // We use the ID returned by the RPC function
     const rewards = rewardsData.map(r => ({
-        program_id: newProgram.id,
+        program_id: newProgramId, // <--- The ID we just got back
         name: r.name,
         discount_type: r.type,
         discount_value: r.value,
@@ -93,4 +78,12 @@ export async function createLoyaltyProgram(merchantId: string, programData: any,
 
     revalidatePath("/loyalty");
     return { success: true };
+}
+
+export async function archiveProgram(programId: string) {
+    await supabaseAdmin
+        .from("loyalty_programs")
+        .update({ status: "archived" })
+        .eq("id", programId);
+    revalidatePath("/loyalty");
 }
