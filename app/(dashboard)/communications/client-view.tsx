@@ -1,471 +1,240 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-    Card, CardContent, CardHeader, CardTitle, CardDescription
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+    Phone, Mail, MessageSquare, Globe,
+    PlayCircle, Clock, Search, User, Send,
+    MoreVertical, CheckCircle2, Bot, AlertCircle
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-    Table, TableBody, TableCell, TableHead, TableHeader, TableRow
-} from "@/components/ui/table";
-import {
-    Sheet,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-    Phone, Mail, MessageSquare, PlayCircle, Clock,
-    Search, Send, Plus, MoreVertical,
-    Bot, Filter, Loader2, Radio
-} from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-type CallLog = any;
-type SmsLog = any;
-type EmailCampaign = any;
+import { Separator } from "@/components/ui/separator";
 
-interface CommunicationsClientProps {
-    calls: CallLog[];
-    messages: SmsLog[];
-    campaigns: EmailCampaign[]; // Added campaigns prop
+interface Interaction {
+    id: string;
+    type: 'sms' | 'voice' | 'email' | 'web_chat';
+    direction: 'inbound' | 'outbound';
+    customer: string;
+    contact_info: string;
+    timestamp: string;
+    content: string;
+    status: string;
+    summary?: string;
+    subject?: string;
+    recording?: string;
+    duration?: number;
 }
 
-export function CommunicationsClient({ calls, messages, campaigns }: CommunicationsClientProps) {
-    const router = useRouter();
+export function CommunicationsClient({ initialData }: { initialData: Interaction[] }) {
+    const [selectedId, setSelectedId] = useState<string | null>(initialData[0]?.id || null);
+    const [filter, setFilter] = useState("all");
 
-    // UI State
-    const [selectedSmsId, setSelectedSmsId] = useState<string | null>(messages[0]?.id || null);
-    const [activeTab, setActiveTab] = useState("calls");
-    const [isCampaignSheetOpen, setIsCampaignSheetOpen] = useState(false);
-    const [sending, setSending] = useState(false);
+    // Filter logic
+    const filteredData = initialData.filter(item =>
+        filter === "all" ? true : item.type === filter
+    );
 
-    // Campaign Form State
-    const [campaignTitle, setCampaignTitle] = useState("");
-    const [campaignSubject, setCampaignSubject] = useState("");
-    const [campaignAudience, setCampaignAudience] = useState("all");
-    const [campaignContent, setCampaignContent] = useState("");
+    const selectedItem = initialData.find(item => item.id === selectedId);
 
-    // Helper to format dates consistently (prevents Hydration errors)
+    // Helper to format dates
     const formatDate = (dateString: string) => {
         return new Date(dateString).toLocaleString('en-US', {
             month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric'
         });
     };
 
-    const handleSendCampaign = async () => {
-        setSending(true);
-        try {
-            const res = await fetch("/api/campaigns/send", {
-                method: "POST",
-                body: JSON.stringify({
-                    title: campaignTitle,
-                    subject: campaignSubject,
-                    audience: campaignAudience,
-                    content: campaignContent
-                })
-            });
-
-            if (res.ok) {
-                alert("Campaign Sent Successfully!");
-                setIsCampaignSheetOpen(false);
-                // Reset form
-                setCampaignTitle("");
-                setCampaignSubject("");
-                setCampaignContent("");
-                // Refresh the page to show the new campaign in the list
-                router.refresh();
-            } else {
-                alert("Failed to send.");
-            }
-        } catch (e) {
-            console.error(e);
-            alert("An error occurred.");
+    // Helper for Icons
+    const TypeIcon = ({ type }: { type: string }) => {
+        switch (type) {
+            case 'voice': return <Phone className="h-4 w-4 text-orange-500" />;
+            case 'email': return <Mail className="h-4 w-4 text-blue-500" />;
+            case 'web_chat': return <Globe className="h-4 w-4 text-indigo-500" />;
+            default: return <MessageSquare className="h-4 w-4 text-green-500" />;
         }
-        setSending(false);
     };
 
     return (
-        <div className="flex-1 space-y-4 p-8 pt-6 h-[calc(100vh-64px)] flex flex-col">
-            <div className="flex items-center justify-between shrink-0">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Communications</h2>
-                    <p className="text-muted-foreground">
-                        Central command for Calls, SMS, Email, and AI interactions.
-                    </p>
-                </div>
-                <Button className="bg-[#906CDD] hover:bg-[#7a5bb5]">
-                    <Plus className="mr-2 h-4 w-4" /> New Message
-                </Button>
-            </div>
+        <div className="flex h-[calc(100vh-64px)] bg-gray-50/50">
 
-            <Tabs defaultValue="calls" value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-                <div className="shrink-0">
-                    <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent">
-                        <TabsTrigger value="calls" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#906CDD] px-6 py-3">AI Calls</TabsTrigger>
-                        <TabsTrigger value="sms" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#906CDD] px-6 py-3">SMS Conversations</TabsTrigger>
-                        <TabsTrigger value="email" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#906CDD] px-6 py-3">Email Campaigns</TabsTrigger>
-                        <TabsTrigger value="broadcasts" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#906CDD] px-6 py-3">Broadcasts</TabsTrigger>
-                        <TabsTrigger value="ai-chat" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#906CDD] px-6 py-3">AI Chat Assistant</TabsTrigger>
-                    </TabsList>
-                </div>
+            {/* --- LEFT SIDEBAR: UNIFIED INBOX --- */}
+            <div className="w-[400px] border-r bg-white flex flex-col">
 
-                {/* --- TAB 1: AI CALLS --- */}
-                <TabsContent value="calls" className="flex-1 overflow-auto p-1">
-                    <Card className="h-full border-none shadow-none">
-                        <div className="flex items-center gap-4 py-4">
-                            <Input placeholder="Search calls..." className="max-w-sm" />
-                            <Button variant="outline"><Filter className="mr-2 h-4 w-4" /> Filter</Button>
-                        </div>
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Type</TableHead>
-                                        <TableHead>Customer</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Transcript Preview</TableHead>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Duration</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {calls.map((call) => (
-                                        <TableRow key={call.call_id}>
-                                            <TableCell>
-                                                <Badge variant="outline" className="capitalize">Inbound</Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="font-medium">{call.customer_phone}</div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge className={call.sentiment === 'negative' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}>
-                                                    {call.call_status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                                                {call.transcript || "No transcript available..."}
-                                            </TableCell>
-                                            <TableCell>
-                                                {formatDate(call.start_timestamp)}
-                                            </TableCell>
-                                            <TableCell>
-                                                {Math.round(call.duration_ms / 1000)}s
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <Sheet>
-                                                    <SheetTrigger asChild>
-                                                        <Button variant="ghost" size="sm" className="text-[#906CDD]">View Details</Button>
-                                                    </SheetTrigger>
-                                                    <SheetContent className="w-[400px] sm:w-[540px]">
-                                                        <SheetHeader>
-                                                            <SheetTitle>Call Details</SheetTitle>
-                                                            <SheetDescription>
-                                                                Recorded on {formatDate(call.start_timestamp)}
-                                                            </SheetDescription>
-                                                        </SheetHeader>
-                                                        <div className="py-6 space-y-6">
-                                                            {/* Audio Player Mock */}
-                                                            <div className="bg-slate-50 p-4 rounded-lg border">
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <span className="text-sm font-medium">Audio Recording</span>
-                                                                    <span className="text-xs text-muted-foreground">{Math.round(call.duration_ms / 1000)}s</span>
-                                                                </div>
-                                                                <div className="h-8 bg-slate-200 rounded-full w-full relative overflow-hidden">
-                                                                    <div className="absolute left-0 top-0 bottom-0 bg-[#906CDD] w-1/3 opacity-50"></div>
-                                                                    <PlayCircle className="absolute left-2 top-1.5 h-5 w-5 text-slate-700" />
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Transcript */}
-                                                            <div>
-                                                                <h4 className="font-semibold mb-2">Transcript</h4>
-                                                                <ScrollArea className="h-[300px] w-full rounded-md border p-4 text-sm text-muted-foreground">
-                                                                    {call.transcript ? call.transcript : "Transcript generating..."}
-                                                                </ScrollArea>
-                                                            </div>
-
-                                                            {/* Actions */}
-                                                            <div className="flex gap-2">
-                                                                <Button className="flex-1 bg-[#906CDD]"><MessageSquare className="mr-2 h-4 w-4" /> Send SMS Follow-up</Button>
-                                                                <Button variant="outline" className="flex-1">Flag for Review</Button>
-                                                            </div>
-                                                        </div>
-                                                    </SheetContent>
-                                                </Sheet>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* --- TAB 2: SMS CONVERSATIONS --- */}
-                <TabsContent value="sms" className="flex-1 overflow-hidden border rounded-lg">
-                    <div className="grid grid-cols-12 h-full bg-white">
-                        {/* LEFT PANEL: List */}
-                        <div className="col-span-4 border-r flex flex-col">
-                            <div className="p-4 border-b">
-                                <Input placeholder="Search messages..." />
-                            </div>
-                            <ScrollArea className="flex-1">
-                                {messages.map((msg) => (
-                                    <div
-                                        key={msg.id}
-                                        onClick={() => setSelectedSmsId(msg.id)}
-                                        className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-colors ${selectedSmsId === msg.id ? 'bg-purple-50 border-l-4 border-l-[#906CDD]' : ''}`}
-                                    >
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="font-semibold">Customer</span>
-                                            <span className="text-xs text-muted-foreground">{formatDate(msg.created_at)}</span>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground line-clamp-2">{msg.description}</p>
-                                    </div>
-                                ))}
-                                {messages.length === 0 && (
-                                    <div className="p-8 text-center text-muted-foreground text-sm">
-                                        No messages found.
-                                    </div>
-                                )}
-                            </ScrollArea>
-                        </div>
-
-                        {/* RIGHT PANEL: Chat View */}
-                        <div className="col-span-8 flex flex-col h-full">
-                            <div className="p-4 border-b flex justify-between items-center bg-slate-50/50">
-                                <div className="flex items-center gap-3">
-                                    <Avatar>
-                                        <AvatarFallback className="bg-slate-200">JD</AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                        <h3 className="font-bold text-sm">Jane Doe</h3>
-                                        <p className="text-xs text-muted-foreground">+1 (555) 123-4567</p>
-                                    </div>
-                                </div>
-                                <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
-                            </div>
-
-                            <ScrollArea className="flex-1 p-4 bg-slate-50/30">
-                                <div className="space-y-4">
-                                    <div className="flex justify-end">
-                                        <div className="bg-[#906CDD] text-white rounded-l-lg rounded-tr-lg p-3 max-w-[70%] text-sm">
-                                            Hi Jane! It looks like it's been 4 weeks since your last cut. Want to book for this week?
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-start">
-                                        <div className="bg-white border text-gray-800 rounded-r-lg rounded-tl-lg p-3 max-w-[70%] text-sm shadow-sm">
-                                            Yes, please reschedule my appointment to next Tuesday at 2pm.
-                                        </div>
-                                    </div>
-                                </div>
-                            </ScrollArea>
-
-                            <div className="p-4 border-t bg-white">
-                                <div className="flex gap-2 mb-2 overflow-x-auto">
-                                    <Badge variant="outline" className="cursor-pointer hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200">Confirm Appointment</Badge>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Textarea placeholder="Type a message..." className="min-h-[60px]" />
-                                    <Button className="h-auto bg-[#906CDD] hover:bg-[#7a5bb5]"><Send className="h-4 w-4" /></Button>
-                                </div>
-                            </div>
-                        </div>
+                {/* Header & Filters */}
+                <div className="p-4 border-b space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-bold tracking-tight">Inbox</h2>
+                        <Badge variant="secondary" className="bg-slate-100 text-slate-600">{filteredData.length}</Badge>
                     </div>
-                </TabsContent>
-
-                {/* --- TAB 3: EMAIL CAMPAIGNS --- */}
-                <TabsContent value="email" className="space-y-4 overflow-auto p-1">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-medium">Recent Campaigns</h3>
-
-                        {/* CREATE CAMPAIGN SHEET */}
-                        <Sheet open={isCampaignSheetOpen} onOpenChange={setIsCampaignSheetOpen}>
-                            <SheetTrigger asChild>
-                                <Button className="bg-[#906CDD] hover:bg-[#7a5bb5]">
-                                    <Plus className="mr-2 h-4 w-4" /> Create Campaign
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent className="w-[500px] sm:w-[600px] overflow-y-auto">
-                                <SheetHeader>
-                                    <SheetTitle>New Email Campaign</SheetTitle>
-                                    <SheetDescription>
-                                        Design and send a broadcast to your customers.
-                                    </SheetDescription>
-                                </SheetHeader>
-                                <div className="space-y-6 py-6">
-                                    <div className="space-y-2">
-                                        <Label>Campaign Name (Internal)</Label>
-                                        <Input
-                                            placeholder="e.g. October Newsletter"
-                                            value={campaignTitle}
-                                            onChange={(e) => setCampaignTitle(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Audience</Label>
-                                        <Select value={campaignAudience} onValueChange={setCampaignAudience}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select audience" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Customers</SelectItem>
-                                                <SelectItem value="vip">VIPs (&gt; $500 spend)</SelectItem>
-                                                <SelectItem value="new">New Customers (1 visit)</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <Separator />
-
-                                    <div className="space-y-2">
-                                        <Label>Subject Line</Label>
-                                        <Input
-                                            placeholder="e.g. You deserve a treat!"
-                                            value={campaignSubject}
-                                            onChange={(e) => setCampaignSubject(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Email Content (HTML)</Label>
-                                        <Textarea
-                                            className="min-h-[200px] font-mono text-sm"
-                                            placeholder="<p>Hey there,</p>..."
-                                            value={campaignContent}
-                                            onChange={(e) => setCampaignContent(e.target.value)}
-                                        />
-                                        <p className="text-xs text-muted-foreground">Basic HTML tags are supported.</p>
-                                    </div>
-
-                                    <Button
-                                        className="w-full bg-[#906CDD] hover:bg-[#7a5bb5]"
-                                        onClick={handleSendCampaign}
-                                        disabled={sending}
-                                    >
-                                        {sending ? <Loader2 className="animate-spin mr-2" /> : <Send className="mr-2 h-4 w-4" />}
-                                        {sending ? "Sending..." : "Send Campaign Now"}
-                                    </Button>
-                                </div>
-                            </SheetContent>
-                        </Sheet>
-                    </div>
-
-                    {/* Campaign Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {campaigns.length === 0 && (
-                            <div className="col-span-3 text-center py-12 text-muted-foreground border rounded-lg border-dashed">
-                                No campaigns sent yet. Create one to get started.
-                            </div>
-                        )}
-
-                        {campaigns.map((c) => (
-                            <Card key={c.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                                <CardHeader>
-                                    <div className="flex justify-between items-start">
-                                        <Badge variant={c.status === 'sent' ? 'default' : 'outline'} className={c.status === 'sent' ? 'bg-green-600' : ''}>
-                                            {c.status}
-                                        </Badge>
-                                        <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
-                                    </div>
-                                    <CardTitle className="text-lg">{c.name}</CardTitle>
-                                    <CardDescription>
-                                        Sent {formatDate(c.created_at)} • {c.sent_count} Recipients
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="grid grid-cols-2 gap-2 text-center">
-                                        <div>
-                                            <div className="text-xl font-bold">--%</div>
-                                            <div className="text-xs text-muted-foreground">Open Rate</div>
-                                        </div>
-                                        <div>
-                                            <div className="text-xl font-bold">--%</div>
-                                            <div className="text-xs text-muted-foreground">Click Rate</div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                    <div className="flex gap-2">
+                        {['all', 'sms', 'voice', 'email'].map(type => (
+                            <button
+                                key={type}
+                                onClick={() => setFilter(type)}
+                                className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === type ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                {type.charAt(0).toUpperCase() + type.slice(1)}
+                            </button>
                         ))}
                     </div>
-                </TabsContent>
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Search conversations..." className="pl-9 bg-slate-50 border-slate-200" />
+                    </div>
+                </div>
 
-                {/* --- TAB 4: BROADCASTS --- */}
-                <TabsContent value="broadcasts" className="space-y-4 overflow-auto p-1">
-                    <Card>
-                        <CardHeader>
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <CardTitle>Broadcast History</CardTitle>
-                                    <CardDescription>Mass announcements sent via SMS, Email, or Voice.</CardDescription>
+                {/* List */}
+                <ScrollArea className="flex-1">
+                    {filteredData.map((item) => (
+                        <div
+                            key={item.id}
+                            onClick={() => setSelectedId(item.id)}
+                            className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-all ${selectedId === item.id ? 'bg-purple-50/50 border-l-4 border-l-[#906CDD]' : 'border-l-4 border-l-transparent'}`}
+                        >
+                            <div className="flex justify-between items-start mb-1">
+                                <div className="flex items-center gap-2">
+                                    <TypeIcon type={item.type} />
+                                    <span className={`font-semibold text-sm ${selectedId === item.id ? 'text-[#906CDD]' : 'text-slate-700'}`}>
+                                        {item.customer}
+                                    </span>
                                 </div>
-                                <Button><Radio className="mr-2 h-4 w-4" /> Create Broadcast</Button>
+                                <span className="text-[10px] text-muted-foreground">{formatDate(item.timestamp)}</span>
                             </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Title</TableHead>
-                                        <TableHead>Channel</TableHead>
-                                        <TableHead>Audience</TableHead>
-                                        <TableHead>Sent Date</TableHead>
-                                        <TableHead>Status</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    <TableRow>
-                                        <TableCell className="font-medium">Holiday Hours Update</TableCell>
-                                        <TableCell><div className="flex items-center gap-2"><MessageSquare className="h-3 w-3" /> SMS</div></TableCell>
-                                        <TableCell>All Customers (540)</TableCell>
-                                        <TableCell>Dec 20, 2024</TableCell>
-                                        <TableCell><Badge className="bg-green-100 text-green-800">Completed</Badge></TableCell>
-                                    </TableRow>
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* --- TAB 5: AI CHAT ASSISTANT --- */}
-                <TabsContent value="ai-chat" className="flex-1 overflow-hidden border rounded-lg bg-slate-50">
-                    <div className="grid grid-cols-12 h-full">
-                        <div className="col-span-3 border-r bg-white p-4 space-y-4">
-                            <h3 className="font-semibold mb-4">AI Chat Logs</h3>
-                            <div className="space-y-2">
-                                <div className="p-3 rounded-lg bg-purple-50 border border-purple-100 cursor-pointer">
-                                    <div className="flex justify-between mb-1">
-                                        <span className="font-medium text-sm">Booking Inquiry</span>
-                                        <span className="text-[10px] text-muted-foreground">2m ago</span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground truncate">Customer asked about availability...</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-span-9 p-8 flex flex-col items-center justify-center text-center">
-                            <Bot className="h-12 w-12 text-muted-foreground mb-4" />
-                            <h3 className="text-lg font-semibold">Select a conversation</h3>
-                            <p className="text-muted-foreground max-w-md">
-                                Review how your AI Assistant interacts with customers. You can flag responses to improve training.
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                                {item.type === 'voice' && item.summary ? (
+                                    <span className="text-orange-600 font-medium">AI Summary: {item.summary}</span>
+                                ) : (
+                                    item.type === 'email' ? item.subject : item.content
+                                )}
                             </p>
                         </div>
-                    </div>
-                </TabsContent>
+                    ))}
+                </ScrollArea>
+            </div>
 
-            </Tabs>
+            {/* --- RIGHT SIDEBAR: DYNAMIC DETAILS --- */}
+            <div className="flex-1 flex flex-col bg-slate-50/30">
+                {selectedItem ? (
+                    <>
+                        {/* Detail Header */}
+                        <div className="h-16 border-b bg-white px-6 flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <Avatar className="h-10 w-10 border">
+                                    <AvatarFallback className="bg-slate-100 text-slate-600">
+                                        {selectedItem.customer.charAt(0)}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <h3 className="font-bold text-sm text-slate-900">{selectedItem.customer}</h3>
+                                    <p className="text-xs text-muted-foreground flex items-center gap-2">
+                                        {selectedItem.contact_info} • <Badge variant="outline" className="text-[10px] h-4 px-1">{selectedItem.status}</Badge>
+                                    </p>
+                                </div>
+                            </div>
+                            <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
+                        </div>
+
+                        {/* Detail Content - Changes based on Type */}
+                        <ScrollArea className="flex-1 p-8">
+
+                            {/* 1. VOICE CALL VIEW */}
+                            {selectedItem.type === 'voice' && (
+                                <div className="space-y-6 max-w-2xl mx-auto">
+                                    <Card>
+                                        <CardHeader className="pb-2">
+                                            <CardTitle className="text-lg flex items-center gap-2">
+                                                <Phone className="h-5 w-5 text-orange-500" /> Call Recording
+                                            </CardTitle>
+                                            <CardDescription>Duration: {selectedItem.duration}s</CardDescription>
+                                        </CardHeader>
+                                        <CardContent>
+                                            {selectedItem.recording ? (
+                                                <div className="bg-slate-100 p-3 rounded-full flex items-center gap-3 px-4">
+                                                    <PlayCircle className="h-8 w-8 text-[#906CDD] cursor-pointer" />
+                                                    <div className="h-1.5 flex-1 bg-slate-300 rounded-full overflow-hidden">
+                                                        <div className="h-full w-1/3 bg-[#906CDD]"></div>
+                                                    </div>
+                                                    <span className="text-xs font-mono text-slate-500">0:12 / {selectedItem.duration}</span>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm text-muted-foreground italic">No recording available.</div>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+
+                                    {selectedItem.summary && (
+                                        <div className="bg-orange-50 border border-orange-100 rounded-lg p-4">
+                                            <h4 className="text-sm font-bold text-orange-800 mb-1 flex items-center gap-2">
+                                                <Bot className="h-4 w-4" /> AI Summary
+                                            </h4>
+                                            <p className="text-sm text-orange-700 leading-relaxed">{selectedItem.summary}</p>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <h4 className="font-semibold text-sm">Transcript</h4>
+                                        <div className="bg-white p-6 rounded-lg border shadow-sm text-sm leading-7 text-slate-700 whitespace-pre-wrap">
+                                            {selectedItem.content}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 2. SMS & CHAT VIEW */}
+                            {(selectedItem.type === 'sms' || selectedItem.type === 'web_chat') && (
+                                <div className="max-w-2xl mx-auto space-y-4">
+                                    <div className={`flex ${selectedItem.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[80%] p-4 rounded-2xl text-sm shadow-sm ${selectedItem.direction === 'outbound'
+                                            ? 'bg-[#906CDD] text-white rounded-br-sm'
+                                            : 'bg-white border text-slate-800 rounded-bl-sm'
+                                            }`}>
+                                            {selectedItem.content}
+                                        </div>
+                                    </div>
+                                    {/* Mock Reply Box */}
+                                    <div className="mt-8 p-4 bg-white rounded-xl border shadow-sm">
+                                        <textarea placeholder="Type a reply..." className="w-full resize-none outline-none text-sm min-h-[60px]" />
+                                        <div className="flex justify-between items-center mt-2">
+                                            <div className="flex gap-2">
+                                                <Badge variant="secondary" className="cursor-pointer hover:bg-slate-200">Suggest Reply</Badge>
+                                            </div>
+                                            <Button size="sm" className="bg-[#906CDD] hover:bg-[#7a5bb5]"><Send className="h-3 w-3 mr-2" /> Send</Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 3. EMAIL VIEW */}
+                            {selectedItem.type === 'email' && (
+                                <div className="max-w-3xl mx-auto bg-white border rounded-xl shadow-sm overflow-hidden">
+                                    <div className="bg-slate-50 p-6 border-b space-y-2">
+                                        <h2 className="text-xl font-bold">{selectedItem.subject}</h2>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-muted-foreground">To: <span className="text-slate-900 font-medium">{selectedItem.customer}</span> ({selectedItem.contact_info})</span>
+                                            <span className="text-muted-foreground">{formatDate(selectedItem.timestamp)}</span>
+                                        </div>
+                                    </div>
+                                    <div
+                                        className="p-8 prose prose-sm max-w-none"
+                                        dangerouslySetInnerHTML={{ __html: selectedItem.content }}
+                                    />
+                                </div>
+                            )}
+
+                        </ScrollArea>
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+                        <div className="bg-white p-4 rounded-full mb-4 shadow-sm">
+                            <MessageSquare className="h-8 w-8 text-slate-300" />
+                        </div>
+                        <p>Select a conversation to view details.</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

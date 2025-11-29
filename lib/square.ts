@@ -40,26 +40,6 @@ export function getAuthUrl() {
     return `${OAUTH_BASE_URL}?${params.toString()}`;
 }
 
-// --- 1. Get Merchant Profile ---
-export async function getMerchantInfo(accessToken: string) {
-    try {
-        const res = await fetch(`${BASE_URL} /merchants/me`, {
-            headers: { Authorization: `Bearer ${accessToken} ` },
-            next: { revalidate: 3600 }, // Cache for 1 hour
-        });
-
-        if (!res.ok) {
-            console.error("❌ Square API Error (Merchant):", res.statusText);
-            return { name: "Square Merchant" };
-        }
-
-        const data = await res.json();
-        return { name: data.merchant.business_name || "My Business" };
-    } catch (error) {
-        console.error("❌ Failed to fetch merchant info:", error);
-        return { name: "Square Merchant" };
-    }
-}
 
 // --- 2. Sync Customers from Square to Supabase ---
 export async function syncCustomers(merchantId: string, accessToken: string) {
@@ -282,5 +262,30 @@ export async function getCustomerFromOrder(orderId: string, accessToken: string)
     } catch (error) {
         console.error("Error fetching customer from order:", error);
         return null;
+    }
+}
+
+export async function getMerchantInfo(accessToken: string) {
+    try {
+        const res = await fetch(`${BASE_URL}/merchants/me`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            next: { revalidate: 3600 },
+        });
+
+        if (!res.ok) return { name: "Square Merchant", logo: null };
+        const data = await res.json();
+
+        // Square returns the logo in the 'main_location' or the merchant object
+        // Usually data.merchant.main_location_id -> fetch location -> logo_url
+        // OR data.merchant.logo_url (if set at account level)
+
+        // Attempt to find a logo in the response (Square API varies based on version/setup)
+        // We will assume data.merchant.logo_url exists or return null
+        return {
+            name: data.merchant.business_name || "My Business",
+            logo: data.merchant.logo_url || null
+        };
+    } catch (error) {
+        return { name: "Square Merchant", logo: null };
     }
 }

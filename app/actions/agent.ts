@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { upsertRetellLLM, upsertRetellAgent, buyPhoneNumber } from "@/lib/retell";
+import { twilioClient } from "@/lib/twilio";
 import { revalidatePath } from "next/cache";
 
 // --- MAIN SAVE ACTION ---
@@ -101,57 +102,40 @@ export async function saveAgentConfig(merchantId: string, config: any, agentId?:
     }
 }
 
-// --- NEW ACTION: PURCHASE NUMBER ---
-export async function purchaseNumber(merchantId: string, areaCode: number) {
+// --- FIXED PURCHASE ACTION (Twilio Direct) ---
+export async function purchaseNumber(merchantId: string, phoneNumber: string, agentId?: string) {
     try {
-        // 1. Find existing agent for this merchant
-        let { data: agent } = await supabaseAdmin
-            .from("ai_agents")
-            .select("*")
-            .eq("merchant_id", merchantId)
-            .single();
+        if (!phoneNumber) throw new Error("No phone number selected");
 
-        let retellAgentId = agent?.retell_agent_id;
+        // 1. Buy the Number from Twilio
+        const purchase = await twilioClient.incomingPhoneNumbers.create({
+            phoneNumber: phoneNumber,
+            // Auto-configure the webhook to your app so Voice works immediately
+            voiceUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/incoming`,
+            voiceMethod: 'POST'
+        });
 
-        // 2. If no agent exists, create a placeholder one
-        // Retell requires an agent_id to buy a number
-        if (!retellAgentId) {
-            const llm = await upsertRetellLLM(null, "Initial setup placeholder");
-            const retellAgent = await upsertRetellAgent(
-                null,
-                llm.llm_id,
-                "11labs-Sarah",
-                "New Agent",
-                "Hello, how can I help?"
-            );
-            retellAgentId = retellAgent.agent_id;
+        // 2. Update Supabase
+        // If agentId is passed, link it. If not, find the active one.
+        let query = supabaseAdmin.from("ai_agents").update({
+            phone_number: purchase.phoneNumber,
+            phone_mode: 'generated'
+        });
 
-            // Save to DB so we don't lose this reference
-            const { data: newAgent } = await supabaseAdmin.from("ai_agents").insert({
-                merchant_id: merchantId,
-                retell_agent_id: retellAgentId,
-                retell_llm_id: llm.llm_id,
-                name: "New Agent",
-                status: "setup",
-                type: "voice"
-            }).select().single();
-
-            agent = newAgent;
+        if (agentId) {
+            query = query.eq("id", agentId);
+        } else {
+            query = query.eq("merchant_id", merchantId);
         }
 
-        // 3. Buy the number
-        const phoneRes = await buyPhoneNumber(areaCode, retellAgentId);
+        const { error } = await query;
+        if (error) throw error;
 
-        // 4. Update DB with the new number
-        if (agent) {
-            await supabaseAdmin.from("ai_agents").update({
-                phone_number: phoneRes.phone_number
-            }).eq("id", agent.id);
-        }
+        revalidatePath("/ai-agent");
+        return { success: true, number: purchase.phoneNumber };
 
-        return { success: true, number: phoneRes.phone_number };
-    } catch (e: any) {
-        console.error("Purchase Number Failed:", e);
-        return { success: false, error: e.message };
+    } catch (error: any) {
+        console.error("Twilio Purchase Error:", error);
+        return { success: false, error: error.message || "Failed to buy number" };
     }
 }
