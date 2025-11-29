@@ -12,90 +12,115 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { subject, content, audience, title } = body;
         const fromEmail = process.env.NEXT_PUBLIC_FROM_EMAIL;
-        const mailgunDomain = DOMAIN;
 
-        if (!fromEmail || !mailgunDomain) {
-            return NextResponse.json({ error: "Server misconfiguration: Missing Mailgun config." }, { status: 500 });
+        if (!fromEmail || !DOMAIN) {
+            return NextResponse.json({ error: "Server config error" }, { status: 500 });
         }
 
-        // 1. Fetch Merchant Info (For Reply-To)
+        // --- STEP 1: CREATE CAMPAIGN IN DB FIRST (MOVED TO TOP) ---
+        // This creates the record and gives us an ID to track.
+        const { data: campaign, error: insertError } = await supabaseAdmin
+            .from("email_campaigns")
+            .insert({
+                merchant_id: merchantId,
+                name: title,
+                subject: subject,
+                body: content,
+                audience: audience,
+                status: "sending", // Start with a "sending" status
+                sent_count: 0 // Will be updated later
+            })
+            .select()
+            .single();
+
+        // If this fails, we can't proceed.
+        if (insertError) {
+            console.error("DB Insert Error:", insertError);
+            throw new Error("Could not create campaign record in database.");
+        }
+
+        // --- STEP 2: Fetch Merchant Info ---
         const { data: merchant } = await supabaseAdmin
             .from("merchants")
             .select("business_name, email")
             .eq("platform_merchant_id", merchantId)
             .single();
 
-        if (!merchant) return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
+        if (!merchant) throw new Error("Merchant not found");
 
-        // 2. Fetch Audience
-        let query = supabaseAdmin.from("customers").select("email, first_name").eq("merchant_id", merchantId).neq("email", null);
+        // --- STEP 3: Fetch Audience ---
+        let query = supabaseAdmin
+            .from("customers")
+            .select("email, first_name")
+            .eq("merchant_id", merchantId)
+            .neq("email", null)
+            .or('is_subscribed.is.null,is_subscribed.eq.true');
 
-        // Add filtering logic
-        if (audience === "vip") query = query.gt("total_spend_cents", 50000);
+        if (audience === "vip") {
+            query = query.gt("total_spend_cents", 50000);
+        }
 
         const { data: customers } = await query;
 
         if (!customers || customers.length === 0) {
-            return NextResponse.json({ error: "No customers found for this audience." }, { status: 400 });
+            // Update status to failed since no one was found
+            await supabaseAdmin.from("email_campaigns").update({ status: 'failed', sent_count: 0 }).eq('id', campaign.id);
+            return NextResponse.json({ error: "No subscribed recipients found." }, { status: 400 });
         }
 
-        // 3. Prepare Batch Sending for Mailgun
-        // Mailgun allows sending to multiple recipients in one API call using "Recipient Variables"
-        // This is much faster/cheaper than a loop.
-
+        // --- STEP 4: Prepare Mailgun Data ---
         const recipients: string[] = [];
         const recipientVariables: Record<string, any> = {};
 
         customers.forEach(c => {
             if (c.email) {
                 recipients.push(c.email);
-                // Map email to { id: 1, name: "John" } so we can use %recipient.name% in the body
                 recipientVariables[c.email] = { name: c.first_name || "there" };
             }
         });
 
-        if (recipients.length === 0) return NextResponse.json({ error: "No valid emails found" }, { status: 400 });
-
-        // 4. Send via Mailgun
         const messageData = {
-            from: `${merchant.business_name} via VoiceIntel <${fromEmail}>`,
-            to: recipients, // Array of emails
-            'recipient-variables': JSON.stringify(recipientVariables), // Magic mapping
-            'h:Reply-To': merchant.email, // <--- CRITICAL: Replies go to the merchant!
+            from: `${merchant.business_name} <${fromEmail}>`,
+            to: recipients,
+            'recipient-variables': JSON.stringify(recipientVariables),
+            'h:Reply-To': merchant.email,
             subject: subject,
-            // We use %recipient.name% which Mailgun replaces per person
+            // Now this is guaranteed to exist
+            'v:campaign_id': campaign.id,
+            'o:tracking': 'yes',
+            'o:tracking-opens': 'yes',
+            'o:tracking-clicks': 'yes',
             html: `
-          <div style="font-family: Helvetica, Arial, sans-serif; color: #333; line-height: 1.5;">
-            <p>Hi %recipient.name%,</p> 
-            <div style="margin: 20px 0; white-space: pre-wrap;">${content}</div>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;" />
-            <p style="font-size: 12px; color: #888;">
-              ${merchant.business_name} • Powered by VoiceIntel
-              <br/>
-              <a href="%unsubscribe_url%" style="color: #888;">Unsubscribe</a>
-            </p>
-          </div>
-        `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; color: #333; line-height: 1.6;">
+                    <p>Hi %recipient.name%,</p> 
+                    
+                    <!-- This div now correctly uses the 'content' variable -->
+                    <div style="margin: 20px 0; white-space: pre-wrap; font-size: 16px;">${content}</div>
+                    
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;" />
+                    
+                    <p style="font-size: 12px; color: #888;">
+                      Sent by ${merchant.business_name} • Powered by VoiceIntel
+                      <br/>
+                      <a href="%unsubscribe_url%" style="color: #888; text-decoration: underline;">Unsubscribe</a>
+                    </p>
+                </div>
+            `
         };
 
-        const msg = await mg.messages.create(mailgunDomain, messageData);
-        console.log(`✅ Mailgun Sent: ${msg.id}`);
+        // --- STEP 5: Send via Mailgun ---
+        await mg.messages.create(DOMAIN, messageData as any);
 
-        // 5. Log Campaign to Database
-        await supabaseAdmin.from("email_campaigns").insert({
-            merchant_id: merchantId,
-            name: title,
-            subject: subject,
-            body: content,
-            audience: audience,
-            status: "sent",
-            sent_count: recipients.length
-        });
+        // --- STEP 6: Update Campaign Status and Count ---
+        await supabaseAdmin
+            .from("email_campaigns")
+            .update({ status: 'sent', sent_count: recipients.length })
+            .eq('id', campaign.id);
 
         return NextResponse.json({ success: true, count: recipients.length });
 
     } catch (error: any) {
-        console.error("❌ Mailgun Error:", error);
-        return NextResponse.json({ error: error.message || "Failed to send emails" }, { status: 500 });
+        console.error("Email Error:", error);
+        return NextResponse.json({ error: error.message || "Failed to send" }, { status: 500 });
     }
 }

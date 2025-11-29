@@ -1,225 +1,278 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
+import {
+    Plus, Mail, Users, CheckCircle2, Eye, MousePointer2,
+    AlertCircle, Ban, Send, BarChart3
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Send, Mail, Loader2, Sparkles, CheckCircle2, MoreVertical } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 
-// Email Templates
-const TEMPLATES = [
-    {
-        label: "Weekly Newsletter",
-        subject: "This Week's Specials at VoiceIntel",
-        body: "<p>Hi {name},</p><p>We have some exciting updates for you this week...</p>"
-    },
-    {
-        label: "VIP Invite",
-        subject: "Exclusive VIP Access",
-        body: "<p>Hi {name},</p><p>As one of our top clients, we want to invite you to..."
-    },
-    {
-        label: "We Miss You",
-        subject: "It's been a while!",
-        body: "<p>Hi {name},</p><p>We noticed you haven't visited in a while. Here is a <strong>10% Off</strong> coupon for your next visit.</p>"
-    },
-];
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-export function EmailClient({ campaigns }: { campaigns: any[] }) {
-    const router = useRouter();
-    const [sending, setSending] = useState(false);
+interface Campaign {
+    id: string;
+    created_at: string;
+    name: string;
+    subject: string;
+    status: string;
+    sent_count: number;
+    delivered_count: number;
+    open_count: number;
+    click_count: number;
+    bounce_count: number;
+    complaint_count: number;
+    failure_count: number;
+}
 
-    // Form State
-    const [title, setTitle] = useState("");
-    const [subject, setSubject] = useState("");
-    const [audience, setAudience] = useState("all");
-    const [content, setContent] = useState(TEMPLATES[0].body);
+interface EmailPageProps {
+    initialCampaigns: Campaign[];
+    merchantId: string;
+}
 
-    const handleSend = async () => {
-        if (!title || !subject || !content) return alert("Please fill out all fields");
-        setSending(true);
-        try {
-            const res = await fetch("/api/campaigns/send", {
-                method: "POST",
-                body: JSON.stringify({ title, subject, audience, content })
-            });
-            if (res.ok) {
-                alert("Email Campaign Sent!");
-                setTitle("");
-                setSubject("");
-                router.refresh();
-            } else {
-                const err = await res.json();
-                alert("Error: " + err.error);
-            }
-        } catch (e) { console.error(e); }
-        setSending(false);
-    };
+export function EmailClientView({ initialCampaigns, merchantId }: EmailPageProps) {
+    const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
 
-    const applyTemplate = (t: typeof TEMPLATES[0]) => {
-        setSubject(t.subject);
-        setContent(t.body);
+    // --- 1. REALTIME LISTENER ---
+    useEffect(() => {
+        const channel = supabase
+            .channel('email-campaign-updates')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'email_campaigns',
+                    filter: `merchant_id=eq.${merchantId}`
+                },
+                (payload) => {
+                    const updatedCampaign = payload.new as Campaign;
+                    setCampaigns((prev) =>
+                        prev.map((c) => c.id === updatedCampaign.id ? updatedCampaign : c)
+                    );
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'email_campaigns',
+                    filter: `merchant_id=eq.${merchantId}`
+                },
+                (payload) => {
+                    setCampaigns((prev) => [payload.new as Campaign, ...prev]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [merchantId]);
+
+    // --- 2. STATS CALCULATION ---
+    const stats = useMemo(() => {
+        const totalSent = campaigns.reduce((acc, c) => acc + (c.sent_count || 0), 0);
+        const totalDelivered = campaigns.reduce((acc, c) => acc + (c.delivered_count || 0), 0);
+        const totalOpened = campaigns.reduce((acc, c) => acc + (c.open_count || 0), 0);
+        const totalClicked = campaigns.reduce((acc, c) => acc + (c.click_count || 0), 0);
+
+        const deliveryRate = totalSent > 0 ? (totalDelivered / totalSent) * 100 : 0;
+        const openRate = totalDelivered > 0 ? (totalOpened / totalDelivered) * 100 : 0;
+        const clickRate = totalOpened > 0 ? (totalClicked / totalOpened) * 100 : 0;
+
+        return {
+            totalSent,
+            deliveryRate: Math.round(deliveryRate),
+            openRate: Math.round(openRate),
+            clickRate: Math.round(clickRate)
+        };
+    }, [campaigns]);
+
+    const getRate = (num: number, total: number) => {
+        if (!total || total === 0) return "0%";
+        return `${Math.round((num / total) * 100)}%`;
     };
 
     return (
-        <div className="flex-1 space-y-6 p-8 pt-6 bg-gray-50/50 min-h-screen">
+        <div className="flex-1 space-y-6 p-8 pt-6">
+
+            {/* HEADER */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Email Marketing</h2>
-                    <p className="text-muted-foreground">Design and send broadcasts to your customer base.</p>
+                    <p className="text-muted-foreground">Real-time performance metrics.</p>
                 </div>
+                <Button asChild>
+                    <Link href="/email/new">
+                        <Plus className="mr-2 h-4 w-4" /> Create Campaign
+                    </Link>
+                </Button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* OVERALL STATS */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Volume</CardTitle>
+                        <Send className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.totalSent.toLocaleString()}</div>
+                        <p className="text-xs text-muted-foreground">Emails sent lifetime</p>
+                    </CardContent>
+                </Card>
 
-                {/* --- LEFT: CONFIGURATION --- */}
-                <div className="lg:col-span-2 space-y-6">
-                    <Card className="border-none shadow-md">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Mail className="h-5 w-5 text-[#906CDD]" /> Compose Email
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Campaign Name (Internal)</Label>
-                                    <Input placeholder="e.g. Oct Newsletter" value={title} onChange={e => setTitle(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Target Audience</Label>
-                                    <Select value={audience} onValueChange={setAudience}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Customers</SelectItem>
-                                            <SelectItem value="vip">VIPs ($500+ Spend)</SelectItem>
-                                            <SelectItem value="new">New Customers (1 visit)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Delivery Rate</CardTitle>
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.deliveryRate}%</div>
+                        <Progress value={stats.deliveryRate} className="h-2 mt-2" />
+                    </CardContent>
+                </Card>
 
-                            <div className="space-y-2">
-                                <Label>Load a Template</Label>
-                                <div className="flex gap-2 flex-wrap">
-                                    {TEMPLATES.map(t => (
-                                        <Badge
-                                            key={t.label}
-                                            variant="outline"
-                                            className="cursor-pointer hover:bg-purple-50 hover:border-purple-200 py-2"
-                                            onClick={() => applyTemplate(t)}
-                                        >
-                                            {t.label}
-                                        </Badge>
-                                    ))}
-                                </div>
-                            </div>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Open Rate</CardTitle>
+                        <Eye className="h-4 w-4 text-blue-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.openRate}%</div>
+                        <p className="text-xs text-muted-foreground">Avg. engagement</p>
+                    </CardContent>
+                </Card>
 
-                            <div className="space-y-2">
-                                <Label>Subject Line</Label>
-                                <Input placeholder="Subject..." value={subject} onChange={e => setSubject(e.target.value)} />
-                            </div>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Click Rate</CardTitle>
+                        <MousePointer2 className="h-4 w-4 text-purple-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.clickRate}%</div>
+                        <p className="text-xs text-muted-foreground">Clicks per open</p>
+                    </CardContent>
+                </Card>
+            </div>
 
-                            <div className="space-y-2">
-                                <Label>Email Body (HTML)</Label>
-                                <Textarea
-                                    className="min-h-[200px] font-mono text-sm"
-                                    value={content}
-                                    onChange={e => setContent(e.target.value)}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Tip: Use <strong>{`{name}`}</strong> to insert the customer's name. Basic HTML tags (&lt;p&gt;, &lt;br&gt;, &lt;strong&gt;) work.
-                                </p>
-                            </div>
+            {/* CAMPAIGN LIST */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" /> Recent Campaigns
+                </h3>
 
-                            <Button
-                                className="w-full bg-[#906CDD] hover:bg-[#7a5bb5] h-12 text-lg"
-                                onClick={handleSend}
-                                disabled={sending}
-                            >
-                                {sending ? <Loader2 className="animate-spin mr-2" /> : <Sparkles className="mr-2 h-5 w-5" />}
-                                {sending ? "Sending..." : "Blast Campaign"}
-                            </Button>
-                        </CardContent>
-                    </Card>
-
-                    {/* HISTORY */}
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-slate-800">Recent Campaigns</h3>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {campaigns.map(c => (
-                                <Card key={c.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                                    <CardHeader className="pb-2">
-                                        <div className="flex justify-between items-start">
-                                            <Badge variant={c.status === 'sent' ? 'default' : 'outline'} className={c.status === 'sent' ? 'bg-green-600 hover:bg-green-700' : ''}>
+                {campaigns.length === 0 ? (
+                    <div className="text-center py-20 bg-muted/20 rounded-xl border-dashed border-2">
+                        <Mail className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium">No campaigns yet</h3>
+                        <p className="text-muted-foreground mb-6">Send your first email blast to your customers.</p>
+                        <Button asChild>
+                            <Link href="/email/new">Draft Email</Link>
+                        </Button>
+                    </div>
+                ) : (
+                    campaigns.map((c) => (
+                        <Card key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                            <CardContent className="p-6">
+                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="font-semibold text-lg">{c.name}</h4>
+                                            <Badge variant={c.status === 'sent' ? 'default' : 'secondary'} className="capitalize">
                                                 {c.status}
                                             </Badge>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6"><MoreVertical className="h-4 w-4" /></Button>
                                         </div>
-                                        <CardTitle className="text-base mt-2">{c.name}</CardTitle>
-                                        <CardDescription>
-                                            {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • {c.sent_count} Recipients
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="text-sm text-muted-foreground truncate">
-                                            Sub: {c.subject}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                        {campaigns.length === 0 && <p className="text-muted-foreground">No emails sent yet.</p>}
-                    </div>
-                </div>
+                                        <p className="text-sm text-muted-foreground">Subject: {c.subject}</p>
 
-                {/* --- RIGHT: EMAIL PREVIEW --- */}
-                <div className="hidden lg:block">
-                    <div className="sticky top-6">
-                        <div className="bg-white rounded-xl border shadow-lg overflow-hidden h-[600px] flex flex-col">
-                            {/* Fake Browser Header */}
-                            <div className="bg-slate-100 border-b p-3 flex gap-2 items-center">
-                                <div className="flex gap-1.5">
-                                    <div className="w-3 h-3 rounded-full bg-red-400"></div>
-                                    <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-                                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                                </div>
-                                <div className="bg-white flex-1 mx-4 rounded-md h-6 text-[10px] flex items-center px-2 text-muted-foreground shadow-sm">
-                                    https://mail.google.com/...
-                                </div>
-                            </div>
-
-                            {/* Email UI */}
-                            <div className="flex-1 p-6 overflow-y-auto bg-white">
-                                <div className="border-b pb-4 mb-6 space-y-2">
-                                    <h2 className="text-xl font-bold text-slate-900">
-                                        {subject || "New Message"}
-                                    </h2>
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-full bg-[#906CDD] flex items-center justify-center text-white font-bold">V</div>
-                                        <div>
-                                            <p className="text-sm font-semibold text-slate-900">VoiceIntel <span className="text-slate-400 font-normal">&lt;admin@voiceintel.com&gt;</span></p>
-                                            <p className="text-xs text-slate-500">to me</p>
+                                        {/* --- FIX: Added suppressHydrationWarning to this paragraph --- */}
+                                        <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                                            {new Date(c.created_at).toLocaleDateString("en-US", {
+                                                year: 'numeric',
+                                                month: 'short',
+                                                day: 'numeric'
+                                            })} at {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-2xl font-bold">{c.sent_count}</div>
+                                        <div className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                                            <Users className="h-3 w-3" /> Recipients
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Email Body Preview */}
-                                <div
-                                    className="prose prose-sm max-w-none text-slate-700"
-                                    dangerouslySetInnerHTML={{ __html: content.replace("{name}", "Sarah") }}
-                                />
-                            </div>
-                        </div>
-                        <p className="text-center text-sm text-muted-foreground mt-4">Desktop Preview</p>
-                    </div>
-                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 border-t pt-4">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> Delivered
+                                        </div>
+                                        <div className="font-semibold text-lg">
+                                            {c.delivered_count || 0}
+                                            <span className="text-xs font-normal text-muted-foreground ml-1">
+                                                ({getRate(c.delivered_count, c.sent_count)})
+                                            </span>
+                                        </div>
+                                    </div>
 
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <Eye className="h-3.5 w-3.5 text-blue-500" /> Opened
+                                        </div>
+                                        <div className="font-semibold text-lg">
+                                            {c.open_count || 0}
+                                            <span className="text-xs font-normal text-muted-foreground ml-1">
+                                                ({getRate(c.open_count, c.delivered_count)})
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <MousePointer2 className="h-3.5 w-3.5 text-purple-500" /> Clicked
+                                        </div>
+                                        <div className="font-semibold text-lg">
+                                            {c.click_count || 0}
+                                            <span className="text-xs font-normal text-muted-foreground ml-1">
+                                                ({getRate(c.click_count, c.open_count)})
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <Ban className="h-3.5 w-3.5 text-orange-500" /> Bounced
+                                        </div>
+                                        <div className="font-semibold text-lg">{c.bounce_count || 0}</div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <AlertCircle className="h-3.5 w-3.5 text-red-500" /> Spam
+                                        </div>
+                                        <div className="font-semibold text-lg">{c.complaint_count || 0}</div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <AlertCircle className="h-3.5 w-3.5 text-gray-500" /> Failed
+                                        </div>
+                                        <div className="font-semibold text-lg">{c.failure_count || 0}</div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))
+                )}
             </div>
         </div>
     );
