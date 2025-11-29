@@ -35,7 +35,7 @@ const NAV_SECTIONS = [
             { label: "Communications", href: "/communications", icon: MessageSquare },
             { label: "SMS", href: "/sms", icon: Smartphone },
             { label: "Email", href: "/email", icon: Mail },
-            { label: "AI Voice Agent", href: "/ai-agent", icon: Bot },
+            { label: "Calls", href: "/ai-agent", icon: Bot },
             { label: "Site Widgets", href: "/site-widgets", icon: Globe },
         ]
     },
