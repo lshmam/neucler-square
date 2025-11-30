@@ -32,7 +32,7 @@ const NAV_SECTIONS = [
     {
         title: "Growth",
         items: [
-            { label: "Communications", href: "/communications", icon: MessageSquare },
+            // { label: "Communications", href: "/communications", icon: MessageSquare },
             { label: "SMS", href: "/sms", icon: Smartphone },
             { label: "Email", href: "/email", icon: Mail },
             { label: "Calls", href: "/ai-agent", icon: Bot },
