@@ -1,12 +1,18 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { EmailClientView } from "./client-view"; // Import the file you just made
+import { EmailClientView } from "./client-view";
 
 export default async function EmailMarketingPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        redirect("/login");
+    }
+
+    // The user's ID is the merchant ID
+    const merchantId = user.id;
 
     // Fetch Past Campaigns
     const { data: campaigns } = await supabaseAdmin

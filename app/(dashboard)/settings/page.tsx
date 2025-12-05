@@ -1,13 +1,10 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/lib/supabase";
-import { OnboardingForm } from "@/app/onboarding/form"; // Reusing your form
+// import { OnboardingForm } from "@/app/onboarding-square/form"; // Reusing your form
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function SettingsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     const { data: merchant } = await supabaseAdmin
         .from("merchants")
@@ -39,12 +36,12 @@ export default async function SettingsPage() {
                         </CardHeader>
                         <CardContent>
                             {/* Reuse the form in "Settings Mode" */}
-                            <OnboardingForm
+                            {/* <OnboardingForm
                                 merchantId={merchantId}
                                 initialData={profile}
                                 businessName={merchant?.business_name}
                                 isSettings={true}
-                            />
+                            /> */}
                         </CardContent>
                     </Card>
                 </div>

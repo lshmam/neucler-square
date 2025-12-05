@@ -54,7 +54,7 @@ export function WebIntegrationClient({ widgets, merchantId }: WidgetProps) {
 
     // Helper to generate embed code
     const getEmbedCode = (type: string) => {
-        return `<script src="https://cdn.voiceintel.com/loader.js" \n  data-merchant-id="${merchantId}" \n  data-widget="${type}"></script>`;
+        return `<script src="https://cdn.Neucler.com/loader.js" \n  data-merchant-id="${merchantId}" \n  data-widget="${type}"></script>`;
     };
 
     return (
@@ -217,7 +217,7 @@ export function WebIntegrationClient({ widgets, merchantId }: WidgetProps) {
                                     {formConfig.fields.phone && <Input placeholder="Phone Number" />}
                                     {formConfig.fields.message && <Textarea placeholder="How can we help?" />}
                                     <Button className="w-full">{formConfig.buttonText}</Button>
-                                    <p className="text-xs text-center text-muted-foreground">Powered by VoiceIntel</p>
+                                    <p className="text-xs text-center text-muted-foreground">Powered by Neucler</p>
                                 </div>
                             </Card>
 

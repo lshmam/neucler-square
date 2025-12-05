@@ -1,16 +1,14 @@
 // FILE: app/ai-agent/new/page.tsx
 
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/lib/supabase";
-import { VoiceSetupWizard } from "../setup-wizard"; // Adjust path if needed
+import { AgentSetupWizard } from "../setup-wizard"; // Adjust path if needed
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function NewAIAgentPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // Fetch data needed for the wizard
     const { data: merchant } = await supabaseAdmin.from("merchants").select("business_name").eq("platform_merchant_id", merchantId).single();
@@ -24,7 +22,7 @@ export default async function NewAIAgentPage() {
                     <Link href="/ai-agent">← Back to Dashboard</Link>
                 </Button>
             </div>
-            <VoiceSetupWizard
+            <AgentSetupWizard
                 merchantId={merchantId}
                 businessProfile={{ ...profile, business_name: merchant?.business_name }}
             />

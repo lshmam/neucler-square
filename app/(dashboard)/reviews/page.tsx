@@ -1,14 +1,11 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Star, ThumbsUp, ThumbsDown, MessageSquare } from "lucide-react";
 
 export default async function ReviewsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // 1. Fetch Reviews
     const { data: reviews } = await supabaseAdmin

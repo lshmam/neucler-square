@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/lib/supabase";
 import { LoyaltySetupWizard } from "./setup-wizard";
 import { CustomerPointsTable } from "./customer-table";
@@ -10,9 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Trophy, Users, TrendingUp, Plus, ArrowRight } from "lucide-react";
 
 export default async function LoyaltyPage({ searchParams }: { searchParams: { prog?: string, action?: string } }) {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     const { prog: selectedProgramId, action } = await searchParams;
 

@@ -1,23 +1,30 @@
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { CustomersClient } from "./client"; // Import the new component
+import { CustomersClient } from "./client"; // Your beautiful client component
+import { createClient } from "@/lib/supabase-server";
 
 export default async function CustomersPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    // Fetch ALL customers for this merchant
-    const { data: customers } = await supabaseAdmin
+    if (!user) {
+        redirect("/login");
+    }
+
+    // The user's ID is the merchant ID
+    const merchantId = user.id;
+
+    // Fetch customers belonging to this merchant
+    const { data: customers } = await supabase
         .from("customers")
         .select("*")
         .eq("merchant_id", merchantId)
-        .order("last_name", { ascending: true })
-        .limit(100); // Increase limit for better demo
+        .order("created_at", { ascending: false });
 
+    // Pass the real data to the client component
     return (
-        // We pass the data to the client component
-        <CustomersClient initialCustomers={customers || []} />
+        <CustomersClient
+            initialCustomers={customers || []}
+            merchantId={merchantId}
+        />
     );
 }

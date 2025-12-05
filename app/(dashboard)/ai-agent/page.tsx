@@ -1,8 +1,8 @@
+import { getMerchantId } from "@/lib/auth-helpers";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase";
 import { AIAgentClientView } from "./client-view";
-import { VoiceSetupWizard } from "./setup-wizard";
+import { AgentSetupWizard } from "./setup-wizard";
 import { AgentConfigForm } from "./agent-form"; // Ensure this import exists if you use it
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -13,9 +13,7 @@ interface AIAgentPageProps {
 }
 
 export default async function AIAgentPage({ searchParams }: AIAgentPageProps) {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     console.log("------------------------------------------------");
     console.log("🍪 Current Session Merchant ID:", merchantId);
@@ -51,10 +49,7 @@ export default async function AIAgentPage({ searchParams }: AIAgentPageProps) {
                 <Button variant="ghost" asChild className="mb-4">
                     <Link href="/ai-agent">← Back to Agents</Link>
                 </Button>
-                <VoiceSetupWizard
-                    merchantId={merchantId}
-                    businessProfile={{ ...businessProfile, business_name: merchant?.business_name }}
-                />
+                <AgentSetupWizard merchantId={merchantId} />
             </div>
         );
     }

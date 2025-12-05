@@ -18,7 +18,8 @@ import {
     CreditCard,
     Settings,
     LogOut,
-    ChevronDown
+    ChevronDown,
+    User
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -27,6 +28,8 @@ const NAV_SECTIONS = [
         items: [
             { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
             { label: "Analytics", href: "/analytics", icon: TrendingUp },
+            { label: "Customers", href: "/customers", icon: User },
+            { label: "Inbox", href: "/inbox", icon: MessageSquare },
         ]
     },
     {
@@ -43,7 +46,7 @@ const NAV_SECTIONS = [
         title: "Retention",
         items: [
             { label: "Reputation", href: "/reviews", icon: Star },
-            { label: "Loyalty", href: "/loyalty", icon: Trophy },
+            // { label: "Loyalty", href: "/loyalty", icon: Trophy },
         ]
     },
     {

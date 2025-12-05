@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase-client";
 import Link from "next/link";
 import {
     Plus, Mail, Users, CheckCircle2, Eye, MousePointer2,
@@ -11,11 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface Campaign {
     id: string;
@@ -39,6 +34,7 @@ interface EmailPageProps {
 
 export function EmailClientView({ initialCampaigns, merchantId }: EmailPageProps) {
     const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+    const supabase = createClient();
 
     // --- 1. REALTIME LISTENER ---
     useEffect(() => {
@@ -76,7 +72,7 @@ export function EmailClientView({ initialCampaigns, merchantId }: EmailPageProps
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [merchantId]);
+    }, [merchantId, supabase]);
 
     // --- 2. STATS CALCULATION ---
     const stats = useMemo(() => {

@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { getAnalyticsData } from "@/app/actions/analytics";
 import { AnalyticsCharts } from "@/components/analytics-charts";
 import {
@@ -10,9 +9,7 @@ import {
 } from "lucide-react";
 
 export default async function AnalyticsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // Fetch real data
     const data = await getAnalyticsData(merchantId);
@@ -98,7 +95,7 @@ export default async function AnalyticsPage() {
                             AI Impact Report
                         </CardTitle>
                         <CardDescription className="text-slate-400">
-                            How VoiceIntel is growing your business compared to last month.
+                            How Neucler is growing your business compared to last month.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="grid md:grid-cols-3 gap-6">

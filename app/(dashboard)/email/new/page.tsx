@@ -143,7 +143,7 @@ export default function NewCampaignPage() {
                                 {/* Email Client Header Simulation */}
                                 <div className="bg-slate-100 p-4 border-b text-sm space-y-2">
                                     <div className="flex justify-between text-slate-500 text-xs">
-                                        <span>From: VoiceIntel</span>
+                                        <span>From: Neucler</span>
                                         <span>Just now</span>
                                     </div>
                                     <div className="font-semibold text-slate-900 truncate">

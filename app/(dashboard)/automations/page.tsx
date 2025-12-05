@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/lib/supabase";
 import { AutomationCard } from "./automation-card";
 
@@ -129,9 +128,7 @@ const AUTOMATIONS_LIB = [
 ];
 
 export default async function AutomationsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     const { data: existingConfigs } = await supabaseAdmin
         .from("automations")

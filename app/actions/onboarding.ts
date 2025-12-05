@@ -1,56 +1,70 @@
-"use server";
+'use server'
 
-import { supabaseAdmin } from "@/lib/supabase";
-import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 
-export async function saveOnboardingData(merchantId: string, formData: any) {
+// Define the shape of data coming from your form
+interface OnboardingData {
+    business_name: string;
+    address: string;
+    phone: string;
+    website: string;
+    business_hours: string[];
+    services: string[];
+}
 
-    const { error } = await supabaseAdmin
-        .from("business_profiles")
-        .upsert({
-            merchant_id: merchantId,
-            // Identity
-            logo_url: formData.logoUrl,
-            brand_color: formData.brandColor,
-            website: formData.website,
-            phone: formData.phone,
-            industry: formData.industry,
+export async function saveOnboardingData(data: OnboardingData) {
+    const supabase = await createClient();
 
-            // Operations
-            timezone: formData.timezone,
-            business_hours: formData.hours,
+    // 1. Get current logged-in user
+    const { data: { user } } = await supabase.auth.getUser();
 
-            // Knowledge
-            services_summary: formData.services,
-            faq_list: formData.faqs,
+    if (!user) {
+        throw new Error("User not authenticated");
+    }
 
-            // Defaults for the AI (Since we removed the step, we set sensible defaults)
-            ai_name: "Alex",
-            ai_tone: "friendly",
+    // 2. Generate a custom Platform Merchant ID
+    // We clean the UUID to look more like a merchant ID (e.g., m_12345...)
+    const platformMerchantId = `m_${user.id.replace(/-/g, '')}`;
 
+    // 3. Insert into MERCHANTS table
+    // We use the User ID as the Primary Key so it links 1:1 with Auth
+    const { error: merchantError } = await supabase
+        .from('merchants')
+        .insert({
+            id: user.id, // Link to Supabase Auth
+            platform_merchant_id: platformMerchantId,
+            email: user.email,
+            business_name: data.business_name,
+            subscription_status: 'trialing',
+            access_token: 'pending_generation' // Placeholder requirement from your schema
+        });
+
+    if (merchantError) {
+        console.error("Merchant Insert Error:", merchantError);
+        throw new Error("Failed to create merchant account");
+    }
+
+    // 4. Insert into BUSINESS_PROFILES table
+    // This uses the platform_merchant_id as the Foreign Key
+    const { error: profileError } = await supabase
+        .from('business_profiles')
+        .insert({
+            merchant_id: platformMerchantId,
+            address: data.address,
+            phone: data.phone,
+            website: data.website,
+            business_hours: JSON.stringify(data.business_hours), // Convert array to JSONB
+            // services_summary: data.services.join(', '), // Optional: Map services if needed
             is_onboarding_completed: true
-        }, { onConflict: "merchant_id" });
+        });
 
-    if (error) throw error;
+    if (profileError) {
+        console.error("Profile Insert Error:", profileError);
+        // Ideally, rollback merchant creation here, but for now we throw
+        throw new Error("Failed to save business profile details");
+    }
 
-    // We still generate the prompt in the background so the AI works immediately
-    const masterPrompt = `
-    You are the AI assistant for ${formData.businessName || "this business"}.
-    Industry: ${formData.industry}
-    Phone: ${formData.phone}
-    Hours: ${JSON.stringify(formData.hours)}
-    Services: ${formData.services}
-    FAQs: ${JSON.stringify(formData.faqs)}
-  `;
-
-    await supabaseAdmin.from("ai_agents").upsert({
-        merchant_id: merchantId,
-        name: "Alex",
-        system_prompt: masterPrompt,
-        type: "hybrid"
-    }, { onConflict: "merchant_id" });
-
-    revalidatePath("/dashboard");
-    redirect("/dashboard?success=onboarding_complete");
+    // 5. Return success (Controller will handle redirect)
+    return { success: true };
 }

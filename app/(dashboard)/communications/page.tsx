@@ -1,13 +1,10 @@
+import { getMerchantId } from "@/lib/auth-helpers";
 import { getRetellCallLogs } from "@/lib/retell";
 import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { CommunicationsClient } from "./client-view";
 
 export default async function CommunicationsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // 1. Fetch SMS & Web Chats (From DB)
     const { data: dbMessages } = await supabaseAdmin

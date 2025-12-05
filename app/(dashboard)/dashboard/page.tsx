@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { supabaseAdmin } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-server"; // <--- Use this instead of supabaseAdmin for auth
+import { supabaseAdmin } from "@/lib/supabase"; // Keep this for data fetching if you prefer
 import { getMerchantInfo, getDailyStats } from "@/lib/square";
 import {
     Card,
@@ -9,7 +9,6 @@ import {
     CardHeader,
     CardTitle,
     CardDescription,
-    CardFooter
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -23,27 +22,34 @@ import {
     Mail,
     ArrowRight,
     CheckCircle2,
-    Circle,
     Activity,
     TrendingUp
 } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 
 export default async function DashboardPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    // 1. Initialize Supabase Client
+    const supabase = await createClient();
 
-    // 1. Fetch Core Merchant Data
-    const { data: merchant } = await supabaseAdmin
+    // 2. Check Auth (Supabase Session)
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) redirect("/login");
+
+    // 3. Fetch Core Merchant Data using the User ID
+    const { data: merchant } = await supabase
         .from("merchants")
-        .select("access_token, business_name")
-        .eq("platform_merchant_id", merchantId)
+        .select("id, platform_merchant_id, access_token, business_name")
+        .eq("id", user.id) // Match Auth ID
         .single();
 
-    if (!merchant) redirect("/");
+    // Safety: If logged in but no merchant row, send to onboarding
+    if (!merchant) redirect("/onboarding");
 
-    // 2. Fetch EVERYTHING in Parallel to determine status
+    // Define the ID used for Foreign Keys in other tables
+    const merchantId = merchant.platform_merchant_id;
+    const hasSquareConnection = merchant.access_token && merchant.access_token !== "pending_generation";
+
+    // 4. Fetch EVERYTHING in Parallel
     const [
         squareStats,
         customerCount,
@@ -53,8 +59,10 @@ export default async function DashboardPage() {
         campaigns,
         recentMessages
     ] = await Promise.all([
-        // A. Revenue
-        getDailyStats(merchantId, merchant.access_token),
+        // A. Revenue (Handle case where Square isn't connected yet)
+        hasSquareConnection
+            ? getDailyStats(merchantId, merchant.access_token)
+            : Promise.resolve({ total: "0.00", count: 0 }),
 
         // B. Customers
         supabaseAdmin.from("customers").select("*", { count: "exact", head: true }).eq("merchant_id", merchantId),
@@ -71,11 +79,11 @@ export default async function DashboardPage() {
         // F. Email Campaigns
         supabaseAdmin.from("email_campaigns").select("*", { count: "exact", head: true }).eq("merchant_id", merchantId),
 
-        // G. Recent Activity Log (For the "Pro" view)
+        // G. Recent Activity Log
         supabaseAdmin.from("messages").select("*").eq("merchant_id", merchantId).order('created_at', { ascending: false }).limit(5)
     ]);
 
-    // 3. Calculate Setup Status
+    // 5. Calculate Setup Status
     const hasVoice = agents.data && agents.data.length > 0 && agents.data[0].phone_number;
     const hasSMS = automations.data && automations.data.length > 0;
     const hasWidget = widgets.data && widgets.data.length > 0;
@@ -138,11 +146,12 @@ export default async function DashboardPage() {
                     </p>
                 </div>
                 <div className="flex items-center space-x-2">
-                    <SyncButton />
+                    {/* Only show Sync button if Square is connected */}
+                    {hasSquareConnection && <SyncButton />}
                 </div>
             </div>
 
-            {/* TOP ROW: REAL-TIME STATS (Always Visible) */}
+            {/* TOP ROW: REAL-TIME STATS */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -152,7 +161,7 @@ export default async function DashboardPage() {
                     <CardContent>
                         <div className="text-2xl font-bold">${squareStats.total}</div>
                         <p className="text-xs text-muted-foreground">
-                            {squareStats.count} orders via Square
+                            {hasSquareConnection ? `${squareStats.count} orders via Square` : "Connect Square to see orders"}
                         </p>
                     </CardContent>
                 </Card>
@@ -199,9 +208,7 @@ export default async function DashboardPage() {
                 </Card>
             </div>
 
-            {/* --- DYNAMIC SECTION --- */}
-
-            {/* SCENARIO A: SETUP INCOMPLETE -> SHOW CHECKLIST */}
+            {/* DYNAMIC SECTION (Checklist or Feed) */}
             {!isFullySetup && (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
                     <Card className="col-span-7 bg-slate-50 border-blue-100">
@@ -221,9 +228,9 @@ export default async function DashboardPage() {
                             {checklist.map((item) => (
                                 <Link href={item.link} key={item.id}>
                                     <div className={`
-                                relative flex flex-col justify-between h-full p-4 rounded-xl border-2 transition-all hover:scale-105 cursor-pointer bg-white
-                                ${item.done ? 'border-green-100 opacity-80' : 'border-slate-200 hover:border-blue-300 shadow-sm'}
-                            `}>
+                                        relative flex flex-col justify-between h-full p-4 rounded-xl border-2 transition-all hover:scale-105 cursor-pointer bg-white
+                                        ${item.done ? 'border-green-100 opacity-80' : 'border-slate-200 hover:border-blue-300 shadow-sm'}
+                                    `}>
                                         {item.done && (
                                             <div className="absolute top-3 right-3 text-green-500">
                                                 <CheckCircle2 className="h-6 w-6" />
@@ -256,10 +263,9 @@ export default async function DashboardPage() {
                 </div>
             )}
 
-            {/* SCENARIO B: FULLY SETUP -> SHOW ACTIVITY FEED */}
             {isFullySetup && (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                    {/* Recent Activity Feed */}
+                    {/* Activity Feed */}
                     <Card className="col-span-4">
                         <CardHeader>
                             <CardTitle>Recent Activity</CardTitle>

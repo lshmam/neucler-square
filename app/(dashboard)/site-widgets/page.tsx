@@ -1,12 +1,9 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { supabaseAdmin } from "@/lib/supabase";
 import { WidgetEditor } from "./widget-editor"; // Client Component
 
 export default async function SiteWidgetsPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // 1. Fetch Existing Config
     const { data: widget } = await supabaseAdmin

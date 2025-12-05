@@ -1,12 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { getMerchantId } from "@/lib/auth-helpers";
 import { SMSClientView } from "./client-view";
 
 export default async function SMSPage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
+
+    console.log(`[SMS Page] Using merchant_id: ${merchantId}`);
 
     // 1. Fetch Campaigns
     const campaignsPromise = supabaseAdmin
@@ -38,6 +37,11 @@ export default async function SMSPage() {
         messagesPromise,
         customersPromise
     ]);
+
+    console.log(`[SMS Page] Found ${messages?.length || 0} messages`);
+    if (messages && messages.length > 0) {
+        console.log(`[SMS Page] First message merchant_id:`, messages[0].merchant_id);
+    }
 
     // 4. Transform Data for Client
     // We manually map customers to messages to avoid SQL Foreign Key issues

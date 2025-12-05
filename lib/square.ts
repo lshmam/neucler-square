@@ -26,7 +26,7 @@ export const SQUARE_SCOPES = [
 // 2. HELPER: Generate the Login URL
 export function getAuthUrl() {
     const clientId = process.env.SQUARE_APP_ID;
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL; // e.g. https://voiceintel.com
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL; // e.g. https://Neucler.com
     const redirectUri = `${baseUrl}/square/callback`;
 
     // Use URLSearchParams to handle encoding automatically (spaces -> %20)

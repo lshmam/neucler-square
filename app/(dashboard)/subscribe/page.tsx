@@ -1,14 +1,12 @@
+import { getMerchantId } from "@/lib/auth-helpers";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Check, ShieldCheck } from "lucide-react";
 
 export default async function SubscribePage() {
-    const cookieStore = await cookies();
-    const merchantId = cookieStore.get("session_merchant_id")?.value;
-    if (!merchantId) redirect("/");
+    const merchantId = await getMerchantId();
 
     // Fetch Merchant Status
     const { data: merchant } = await supabaseAdmin
@@ -29,7 +27,7 @@ export default async function SubscribePage() {
                     <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
                         <ShieldCheck className="w-6 h-6 text-blue-600" />
                     </div>
-                    <CardTitle className="text-2xl">Upgrade to VoiceIntel Pro</CardTitle>
+                    <CardTitle className="text-2xl">Upgrade to Neucler Pro</CardTitle>
                     <CardDescription>
                         Your trial has ended. Subscribe to continue automating your business.
                     </CardDescription>
